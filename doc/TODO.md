@@ -138,7 +138,7 @@ Details, sizes and order in `Plan-tib-reader.md`.
 11. Desktop app (Windows first)
 -------------------------------
 Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
-- [ ] M1 library groundwork: extract cancel/progress/conflicts, `extractItems`, `measure`, `verifySnapshot`,
+- [x] M1 library groundwork: extract cancel/progress/conflicts, `extractItems`, `measure`, `verifySnapshot`,
       `describeArchive`, error codes, WebDAV Host check + secret path, `findWinFsp`, `freeDriveLetters`, exports;
       CLI refactored onto them with unchanged output
 - [ ] M2 app skeleton: `gui/` (Electron + Fluent UI), engine utilityProcess per backup, typed IPC, Welcome,

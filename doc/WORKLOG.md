@@ -139,3 +139,24 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
     because names from a backup are untrusted.
 - Full plan: `Plan-desktop-app.md`; milestones in `TODO.md` section 11. Work on the `desktop-app` branch,
   committed and pushed after each step.
+
+
+2026-10-27: desktop app, M1 (library groundwork)
+------------------------------------------------
+1. `extract()` gained `conflict` (fail/overwrite/skip/rename or a function), `signal` (cancel),
+   `onProgress` and `onRenamed`; the result also counts `skipped`.
+   - A cancelled or failed file is removed.
+   - An overwrite writes next to the original and renames over it at the end, so cancelling keeps
+     the original.
+   - "rename" picks `name (2).ext` like Explorer.
+2. New `extractItems()`, which copies a selection like a file manager (folders included), and `measure()`.
+3. `verifySnapshot()`/`verifyHeaders()` (`src/verify.ts`) and `describeArchive()` (`src/info.ts`), moved
+   out of the CLI. `tib info`/`verify` output is unchanged (CLI tests pass).
+4. Errors carry a `code`: not-a-backup, unexpected-name, missing-part, damaged, encrypted, disk-image, unsupported.
+5. `WebDavServer` checks the Host header on loopback (blocks DNS rebinding) and can serve below a
+   secret `basePath`; `tib mount --drive` uses one.
+6. `findWinFsp()`, `freeDriveLetters()`, `RcloneMount.pid` and `onUnexpectedExit`. `--drive` now says
+   clearly when WinFsp is missing.
+7. Tests: 77 pass (21 new, in `test/library.test.ts` and `test/extract-webdav.test.ts`).
+   - Checked by hand on this machine: a synthetic backup mounted as Z: through the secret path, its
+     files read back correctly, and the drive went away on unmount.

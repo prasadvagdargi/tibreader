@@ -43,7 +43,7 @@ export default class WindowsArchive extends Archive {
 
 		let desc = parseWinFilename(path.basename(initialVolume.fileName));
 		if(!desc) {
-			throw new FormatError('Unexpected file name (expected NAME_full_b1_s1_v1.tib style): ' + initialVolume.fileName);
+			throw new FormatError('Unexpected file name (expected NAME_full_b1_s1_v1.tib style): ' + initialVolume.fileName, 'unexpected-name');
 		}
 
 		let dir = path.dirname(initialVolume.fileName);
@@ -84,7 +84,7 @@ export default class WindowsArchive extends Archive {
 			// Every file of an archive has a unique, consecutive sequence number and the same archive key
 			for(let i = 0; i < parts.length; i++) {
 				if(parts[i].volume.header.sequence !== i + 1) {
-					throw new FormatError('Missing or extra backup files (sequence number ' + parts[i].volume.header.sequence + ' found where ' + (i + 1) + ' was expected)');
+					throw new FormatError('Missing or extra backup files (sequence number ' + parts[i].volume.header.sequence + ' found where ' + (i + 1) + ' was expected)', 'missing-part');
 				}
 
 				if(!parts[i].volume.header.archiveKey.equals(initialVolume.header.archiveKey)) {
@@ -106,7 +106,7 @@ export default class WindowsArchive extends Archive {
 					}
 
 					if(parts[j].desc.volumeNum !== vols.length + 1) {
-						throw new FormatError('Gap in volume numbering at ' + parts[j].volume.fileName);
+						throw new FormatError('Gap in volume numbering at ' + parts[j].volume.fileName, 'missing-part');
 					}
 
 					vols.push(parts[j].volume);

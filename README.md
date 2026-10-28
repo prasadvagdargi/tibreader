@@ -98,7 +98,9 @@ Set `TIB_RCLONE` if rclone isn't on the PATH.
 
 ### Without installing anything: WebDAV
 `tib mount` without `--drive` starts a read-only WebDAV server on `http://127.0.0.1:8642/` (this
-computer only; `--port` and `--host` change that). Every OS can open it with built-in tools.
+computer only; `--port` and `--host` change that). Every OS can open it with built-in tools. On
+127.0.0.1 it only answers requests addressed to `127.0.0.1`, `localhost` or `[::1]`, so web pages
+can't reach it through DNS rebinding. With `--drive`, the server also uses a random secret path.
 
 **Windows**: map it as a drive (File Explorer > This PC > Map network drive), or:
 ```bash
@@ -160,7 +162,20 @@ finally {
 
 Problems that don't stop reading (unknown flags, odd headers) are reported as warnings on stderr.
 Use `setWarningHandler()` to collect or silence them. Errors are thrown as `FormatError` (damaged or
-unknown data) or `NotSupportedError` (valid but unsupported, e.g. encrypted backups).
+unknown data) or `NotSupportedError` (valid but unsupported, e.g. encrypted backups). Both carry a
+`code` (`not-a-backup`, `unexpected-name`, `missing-part`, `damaged`, `encrypted`, `disk-image`,
+`unsupported`) so programs can explain the problem without parsing the message.
+
+Other helpers (all used by the CLI):
+
+| Function | What it does |
+|---|---|
+| `extractItems(fs, paths, dest, opts)` | Copy a selection like a file manager (each item as `dest/<name>`); `extract()` copies one folder's contents |
+| `opts` of both | `conflict` (`fail`, `overwrite`, `skip`, `rename` or a function), `signal` (cancel; unfinished files are removed, replaced files kept), `onProgress`, `onRenamed` |
+| `measure(fs, paths)` | Files, folders and bytes below some paths |
+| `verifySnapshot(fs, opts)` / `verifyHeaders(archive)` | Check every data block, with progress, per-file problems and cancel |
+| `describeArchive(archive)` | Plain-data summary (what `tib info --json` prints) |
+| `WebDavServer`, `RcloneMount`, `findRclone`, `findWinFsp`, `freeDriveLetters` | The pieces behind `tib mount` |
 
 
 Development

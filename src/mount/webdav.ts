@@ -6,18 +6,44 @@ import { splitPath } from '../fs/tree';
 import { warn } from '../log';
 
 
+export interface WebDavOptions {
+	/**
+	 * Serve the backup only below this path, e.g. "/3f9c.../". A random path keeps other programs on
+	 * this computer from guessing the address. Default: "/".
+	 */
+	basePath?: string;
+}
+
 /**
  * A read-only WebDAV server over a backup point.
  *
  * Pure JavaScript, so it works everywhere: Windows can map it as a network drive, macOS Finder and
  * Linux file managers can mount it directly. Only listens on 127.0.0.1 unless told otherwise.
+ *
+ * On a loopback address, requests must name this computer in their Host header (127.0.0.1, localhost
+ * or [::1] with the right port). That stops web pages from reading the backup through DNS rebinding.
  */
 export class WebDavServer {
 
 	private _server: http.Server;
 	private _chunkSize = 1024 * 1024;
+	private _base: string; /**< basePath without its trailing '/', '' for the root */
+	private _port = 0;
+	private _checkHost = true;
 
-	constructor(private _fs: SnapshotFS) {
+	/** A random base path, for servers that only programs use */
+	static randomBasePath(): string {
+		return '/' + crypto.randomBytes(16).toString('hex') + '/';
+	}
+
+	constructor(private _fs: SnapshotFS, opts: WebDavOptions = {}) {
+		let base = opts.basePath || '/';
+		if(!base.startsWith('/') || !base.endsWith('/')) {
+			throw new Error('basePath must start and end with "/"');
+		}
+		splitPath(base); // rejects '.' and '..'
+		this._base = base.slice(0, -1);
+
 		this._server = http.createServer((req, res) => {
 			this.handle(req, res).catch((err) => {
 				warn('WebDAV request failed: ' + (err && err.message));
@@ -42,9 +68,18 @@ export class WebDavServer {
 			this._server.once('error', reject);
 			this._server.listen(port, host, () => {
 				this._server.off('error', reject);
-				resolve(this._server.address() as AddressInfo);
+				let addr = this._server.address() as AddressInfo;
+				this._port = addr.port;
+				// Other computers reach a network address by names this server can't know
+				this._checkHost = isLoopbackAddress(addr.address);
+				resolve(addr);
 			});
 		});
+	}
+
+	/** The path the backup is served below, ending in '/' */
+	get basePath(): string {
+		return this._base + '/';
 	}
 
 	close(): Promise<void> {
@@ -58,6 +93,11 @@ export class WebDavServer {
 		res.setHeader('DAV', '1, 2');
 		res.setHeader('MS-Author-Via', 'DAV');
 
+		if(this._checkHost && !hostAllowed(req.headers.host, this._port)) {
+			req.resume();
+			return send(res, 403, 'Unexpected Host header');
+		}
+
 		let urlPath: string;
 		try {
 			urlPath = decodeURIComponent(new URL(req.url || '/', 'http://localhost').pathname);
@@ -65,6 +105,14 @@ export class WebDavServer {
 		}
 		catch(e) {
 			return send(res, 400, 'Bad path');
+		}
+
+		if(this._base) {
+			if(urlPath !== this._base && !urlPath.startsWith(this._base + '/')) {
+				req.resume();
+				return send(res, 404);
+			}
+			urlPath = urlPath.slice(this._base.length) || '/';
 		}
 
 		switch(req.method) {
@@ -120,7 +168,7 @@ export class WebDavServer {
 
 		let body = '<?xml version="1.0" encoding="utf-8"?>\n' +
 			'<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">\n' +
-			entries.map(propXml).join('') +
+			entries.map((e) => propXml(e, this._base)).join('') +
 			'</D:multistatus>\n';
 
 		res.statusCode = 207;
@@ -185,7 +233,7 @@ export class WebDavServer {
 
 	private async directoryPage(req: http.IncomingMessage, res: http.ServerResponse, entry: FsEntry) {
 		let kids = await this._fs.list(entry.path) || [];
-		let base = hrefFor(entry);
+		let base = hrefFor(entry, this._base);
 		let rows = kids.map((k) => {
 			let name = escapeXml(k.name) + (k.type === 'directory' ? '/' : '');
 			return '<li><a href="' + escapeXml(base + encodeURIComponent(k.name) + (k.type === 'directory' ? '/' : '')) + '">' + name + '</a></li>';
@@ -250,8 +298,29 @@ function escapeXml(s: string) {
 	return s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' } as any)[c]);
 }
 
-function hrefFor(entry: FsEntry) {
-	let href = '/' + splitPath(entry.path).map(encodeURIComponent).join('/');
+function isLoopbackAddress(address: string) {
+	return address === '::1' || address === '::ffff:127.0.0.1' || /^127\./.test(address);
+}
+
+/**
+ * Host headers that name this computer: 127.0.0.1, localhost or [::1], with our port
+ * (or without one when the port is 80)
+ */
+export function hostAllowed(host: string | undefined, port: number): boolean {
+	if(!host) {
+		return false;
+	}
+
+	let m = /^(\[::1\]|127\.0\.0\.1|localhost)(?::(\d+))?$/i.exec(host.trim());
+	if(!m) {
+		return false;
+	}
+
+	return m[2] === undefined ? port === 80 : parseInt(m[2], 10) === port;
+}
+
+function hrefFor(entry: FsEntry, base = '') {
+	let href = base + '/' + splitPath(entry.path).map(encodeURIComponent).join('/');
 	if(entry.type === 'directory' && !href.endsWith('/')) {
 		href += '/';
 	}
@@ -262,7 +331,7 @@ function etag(entry: FsEntry) {
 	return '"' + entry.size.toString(16) + '-' + entry.mtime.getTime().toString(16) + '"';
 }
 
-function propXml(entry: FsEntry): string {
+function propXml(entry: FsEntry, base: string): string {
 	let isDir = entry.type === 'directory';
 	let props = [
 		'<D:displayname>' + escapeXml(entry.name || '/') + '</D:displayname>',
@@ -281,7 +350,7 @@ function propXml(entry: FsEntry): string {
 		);
 	}
 
-	return '<D:response><D:href>' + escapeXml(hrefFor(entry)) + '</D:href>' +
+	return '<D:response><D:href>' + escapeXml(hrefFor(entry, base)) + '</D:href>' +
 		'<D:propstat><D:prop>' + props.join('') + '</D:prop>' +
 		'<D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>\n';
 }

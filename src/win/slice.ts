@@ -69,7 +69,7 @@ export default class WindowsSlice extends Slice {
 			}
 
 			if(n !== 0) {
-				throw new FormatError('Not all slice data could be found (' + n + ' bytes missing)');
+				throw new FormatError('Not all slice data could be found (' + n + ' bytes missing)', 'missing-part');
 			}
 
 			// Ownership of the inner readers moves to the concatenated reader
@@ -90,7 +90,7 @@ export default class WindowsSlice extends Slice {
 
 			// The sector-by-sector trailer is parsed, but where it keeps the slice metadata isn't known yet
 			if(s.trailer.form === SliceForm.SectorBySector) {
-				throw new NotSupportedError('Sector-by-sector (disk image) backups are not supported yet');
+				throw new NotSupportedError('Sector-by-sector (disk image) backups are not supported yet', 'disk-image');
 			}
 
 			s._fileTime = (await fs.promises.stat(lastVolume.fileName)).mtime;
@@ -209,7 +209,7 @@ export default class WindowsSlice extends Slice {
 					// Encrypted data can't be read; say so instead of failing on garbage later
 					let enc = this.config.encryption;
 					if(enc && enc.toLowerCase() !== 'none') {
-						throw new NotSupportedError('Encrypted backups are not supported (encryption: ' + enc + ')');
+						throw new NotSupportedError('Encrypted backups are not supported (encryption: ' + enc + ')', 'encrypted');
 					}
 				}
 			}
