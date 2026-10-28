@@ -304,3 +304,38 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 6. Deferred: native Windows file icons and PDF preview (TODO section 11).
 7. Tests: 16 e2e. New: search (text, wildcard, nothing found, Escape); text and image previews and
    properties; Verify on good and damaged backups; Copy original path; dark theme.
+
+
+2026-10-28: desktop app, M6 (packaging)
+---------------------------------------
+1. Icon:
+   - `gui/build/icon.svg` (an archive box on Fluent blue) is the source.
+   - `npm run icon` renders it to `icon.png` with Electron's offscreen capture (no image tools needed).
+   - electron-builder makes the .ico.
+2. electron-builder 26.17.0 (pinned, over two weeks old), `gui/electron-builder.yml`. Targets:
+   - NSIS installer: per-user, folder choice, Start menu, `.tib` association.
+   - portable exe: `unpackDirName` keeps one temp folder.
+   - zip.
+   Packaging details:
+   - `extraResources` ships `rclone.exe` with its licence, and TibReader's licence.
+   - The asar holds `out/` plus the library's four small dependencies.
+   - Sizes: installer and portable exe ~135 MB, zip ~174 MB (rclone is 81 MB of it).
+   - There is no top-level `zip:` key; the zip's name is `win.artifactName`.
+3. Portable mode:
+   - The portable exe is recognized by `PORTABLE_EXECUTABLE_DIR`.
+   - The zip build is recognized as a packaged app without `Uninstall TibReader.exe` beside it.
+   - Settings go to `TibReader Data` beside the exe (falling back to %APPDATA% when that folder is
+     read-only).
+   - Chromium's caches go to `%TEMP%` (`sessionData`), so a USB stick only gets `settings.json`.
+4. Checked on this machine:
+   - `release/win-unpacked/TibReader.exe` (what the zip holds), driven by Playwright through
+     `executablePath` (`test/e2e/packaged.spec.ts`): portable data folder, browsing, and a real mount
+     through the bundled rclone (the recorded rclone path is the one in `resources/`).
+   - The portable exe, copied to another folder and started: it unpacks for about 15 s on first start,
+     opens, writes only its data folder beside itself, and closes cleanly.
+   - The installer was built but not installed here (it would add a Start menu entry and a file
+     association); TODO lists it as a manual check.
+5. `.github/workflows/release.yml`: a `v*` tag runs on windows-latest.
+   - It checks that the tag matches `gui/package.json`, then runs all tests, `npm run dist` and the e2e
+     tests (including the packaged app).
+   - It creates a **draft** release with the three files using `gh`, with no third-party actions.

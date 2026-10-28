@@ -138,8 +138,8 @@ tib mount backup.tib --fuse ./mnt
 ```
 
 
-Desktop app (Windows, in progress)
-----------------------------------
+Desktop app (Windows)
+---------------------
 `gui/` holds TibReader, a desktop app for people who'd rather not use a command line:
 - Open a backup (or drop it on the window) and browse it like File Explorer, at any backup point.
 - Copy to... a folder, Copy (Ctrl+C) and paste in Explorer, or drag files out.
@@ -161,9 +161,22 @@ Desktop app (Windows, in progress)
 | Ctrl+O | Open another backup |
 | Typing a name | Jump to it |
 
-The backup itself is never changed. Packaged downloads (portable exe, zip, installer) are next; see
-`doc/Plan-desktop-app.md`. For mounting from source, run `npm run fetch-rclone` in `gui/` once (or
-have rclone installed).
+The backup itself is never changed. Design notes: `doc/Plan-desktop-app.md`.
+
+**Downloads** (from the GitHub releases page), all for 64-bit Windows 10 and 11:
+
+| File | What it is |
+|---|---|
+| `TibReader-Setup-<version>.exe` | Installer (no administrator needed): Start menu entry, and double-clicking a `.tib` opens it |
+| `TibReader-<version>-portable.exe` | One file, nothing installed; keeps its settings in a `TibReader Data` folder beside it (good for a USB stick). Starts slower: it unpacks itself first |
+| `TibReader-<version>-win-x64.zip` | The same as a folder: unzip and run `TibReader.exe`; starts instantly; settings beside it too |
+
+The files aren't code-signed yet, so Windows SmartScreen may say "Windows protected your PC": choose
+**More info**, then **Run anyway**.
+
+**Building**: `npm run dist` in `gui/` makes all three in `gui/release/` (it downloads the pinned rclone
+first, checking its checksum). Pushing a `v<version>` tag does the same on GitHub and creates a draft
+release. For mounting while running from source, run `npm run fetch-rclone` once (or have rclone installed).
 
 To run it from source (after `npm install` and `npm run pretest` in the repository root):
 ```bash

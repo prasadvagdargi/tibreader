@@ -7,8 +7,9 @@ import type { RecentBackup } from '../shared/api';
 /**
  * Portable builds keep their settings next to the program instead of in %APPDATA%:
  * - the single-file portable exe (electron-builder sets PORTABLE_EXECUTABLE_DIR), or
- * - the zip build, which ships an empty file named "portable" next to TibReader.exe.
- * Must run before the app is ready. Returns true if settings are kept next to the program.
+ * - the zip build: a packaged app with no uninstaller next to it (the installer puts one there).
+ * A read-only location falls back to %APPDATA%. Must run before the app is ready. Returns true if
+ * settings are kept next to the program.
  */
 export function configureDataFolder(): boolean {
 	// Tests run the app with their own empty settings folder
@@ -21,7 +22,7 @@ export function configureDataFolder(): boolean {
 	if(process.env.PORTABLE_EXECUTABLE_DIR) {
 		base = process.env.PORTABLE_EXECUTABLE_DIR;
 	}
-	else if(app.isPackaged && fs.existsSync(path.join(path.dirname(process.execPath), 'portable'))) {
+	else if(app.isPackaged && !fs.existsSync(path.join(path.dirname(process.execPath), 'Uninstall ' + app.getName() + '.exe'))) {
 		base = path.dirname(process.execPath);
 	}
 
@@ -40,6 +41,8 @@ export function configureDataFolder(): boolean {
 	}
 
 	app.setPath('userData', dir);
+	// Chromium's caches stay on this computer, so a USB stick only gets the settings
+	app.setPath('sessionData', path.join(app.getPath('temp'), 'TibReader', 'session'));
 	return true;
 }
 

@@ -151,5 +151,10 @@ Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
       recent files, resizable folder pane
   - [ ] Real Windows file-type icons (`app.getFileIcon` needs a file on disk; Fluent icons for now)
   - [ ] PDF preview (needs Chromium's PDF viewer in a sandboxed frame)
-- [ ] M6 packaging: portable exe, zip, NSIS installer with `.tib` association; single instance; portable data
+- [x] M6 packaging: portable exe, zip, NSIS installer with `.tib` association; single instance; portable data
       folder; release workflow; README section
+  - [ ] Try the installer by hand: install, double-click a `.tib`, uninstall (not done on the build machine,
+        since it adds a Start menu entry and a file association)
+  - [ ] Code signing (SmartScreen warns about unsigned downloads)
+  - [ ] Drag-and-drop to Explorer by hand (Windows' own drag loop can't be automated)
+  - [ ] Try the app on the real 55 GB backup (`TIB_SAMPLE`)

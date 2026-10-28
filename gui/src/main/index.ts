@@ -193,6 +193,8 @@ function createWindow(file?: string): BrowserWindow {
 		show: false,
 		title: 'TibReader',
 		backgroundColor: background,
+		// Packaged builds take the icon from TibReader.exe
+		icon: app.isPackaged ? undefined : path.join(app.getAppPath(), 'build', 'icon.png'),
 		titleBarStyle: 'hidden',
 		titleBarOverlay: { color: background, symbolColor: dark ? '#ffffff' : '#242424', height: 40 },
 		webPreferences: {
