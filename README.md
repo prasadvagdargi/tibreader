@@ -138,6 +138,25 @@ tib mount backup.tib --fuse ./mnt
 ```
 
 
+Desktop app (Windows, in progress)
+----------------------------------
+`gui/` holds TibReader, a desktop app for people who'd rather not use a command line: open a backup
+(or drop it on the window), browse it like File Explorer, and see its backup points and details. Copying
+files out, mounting and packaged downloads are being added; see `doc/Plan-desktop-app.md`.
+
+To run it from source (after `npm install` and `npm run pretest` in the repository root):
+```bash
+cd gui
+```
+```bash
+npm install
+```
+```bash
+npm run dev
+```
+`npm run test:e2e` builds the app and drives it with Playwright on synthetic backups.
+
+
 Library usage
 -------------
 ```ts

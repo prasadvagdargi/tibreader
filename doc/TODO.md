@@ -141,7 +141,7 @@ Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
 - [x] M1 library groundwork: extract cancel/progress/conflicts, `extractItems`, `measure`, `verifySnapshot`,
       `describeArchive`, error codes, WebDAV Host check + secret path, `findWinFsp`, `freeDriveLetters`, exports;
       CLI refactored onto them with unchanged output
-- [ ] M2 app skeleton: `gui/` (Electron + Fluent UI), engine utilityProcess per backup, typed IPC, Welcome,
+- [x] M2 app skeleton: `gui/` (Electron + Fluent UI), engine utilityProcess per backup, typed IPC, Welcome,
       browse (tree, list, breadcrumb, backup point picker), Info panel, friendly errors
 - [ ] M3 getting files out: Copy to / Restore wizard, jobs flyout with cancel and conflicts, Open, Edit a copy,
       staging, Ctrl+C clipboard (PowerShell `Set-Clipboard -LiteralPath`, paths on stdin), drag-out

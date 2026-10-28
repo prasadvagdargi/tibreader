@@ -160,3 +160,34 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 7. Tests: 77 pass (21 new, in `test/library.test.ts` and `test/extract-webdav.test.ts`).
    - Checked by hand on this machine: a synthetic backup mounted as Z: through the secret path, its
      files read back correctly, and the drive went away on unmount.
+
+
+2026-10-28: desktop app, M2 (app skeleton)
+------------------------------------------
+1. Dependencies pinned to exact versions at least two weeks old (supply-chain caution):
+   - Electron 44.7.1 (45.1.0 was a day old), electron-vite 5.0.0 (6.0.0 was too new), Vite 7.3.7
+     (electron-vite 5 supports up to 7), React 19.3.0, Fluent UI 9.74.9, Playwright 1.64.0.
+   - npm 11 holds back install scripts by default. esbuild's script stays unapproved, since its binary
+     comes from `@esbuild/win32-x64` anyway.
+   - Electron 44 no longer downloads its binary on install. `node node_modules/electron/install.js` does it
+     (checked against the checksums shipped in the package); CI runs it too.
+   - The install isn't stuck when it seems to be: Fluent's icons are ~60,000 files and take several
+     minutes on Windows.
+2. Processes:
+   - main (`gui/src/main`): windows, dialogs, single instance, settings.
+   - one engine `utilityProcess` per open backup (`gui/src/engine`); it bundles the library from `../src`.
+   - sandboxed renderer with a typed preload bridge (`gui/src/preload`, contract in `gui/src/shared/api.ts`).
+   - Results cross processes as `{ok, value}` / `{ok, error: {code, message}}`, so error codes survive IPC.
+   - Main checks that a window owns a session before using it.
+   - Navigation, new windows and webviews are blocked.
+   - A strict CSP is injected into the built page.
+3. UI (Fluent 2, follows the Windows light/dark setting):
+   - Start screen: drop zone, Open button, recent backups.
+   - Backup window: title bar with the backup point picker, command bar, Back/Forward/Up, breadcrumb,
+     lazy folder tree, a virtualized details list with Explorer-style selection, keyboard and typeahead,
+     a status bar and the Info panel.
+   - Friendly errors by code (encrypted, disk image, missing part, renamed, not a backup, damaged...).
+4. Tests: `npm run test:e2e` (Playwright `_electron`) opens synthetic backups from the library's test helpers.
+   It browses, selects, goes Up, opens Info, and shows the encrypted-backup error.
+   - Screenshots land in `gui/test-results/`.
+   - CI gets a Windows job for the app (typecheck + e2e).

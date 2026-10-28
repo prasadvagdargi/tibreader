@@ -10,3 +10,8 @@ ext
 mnt
 *.tib
 *.tib.metadata
+
+# Desktop app: downloaded rclone, packaged builds, test output
+gui/vendor/
+gui/release/
+gui/test-results/
