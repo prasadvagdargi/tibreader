@@ -1,8 +1,8 @@
-Acronis TIB Backup Format Reader
-================================
+tibreader
+=========
 
-Read, verify, extract and mount Acronis True Image backup files (`.tib` and `.tib.metadata`)
-without True Image. Backup files are only ever opened read-only.
+**Acronis True Image backup reader.** Read, verify, extract and mount Acronis True Image backup files
+(`.tib` and `.tib.metadata`) without True Image. Backup files are only ever opened read-only.
 
 The format is undocumented; everything here is reverse-engineered. See `doc/` for the format notes,
 the work log and the to-do list.
@@ -139,7 +139,7 @@ tib mount backup.tib --fuse ./mnt
 Library usage
 -------------
 ```ts
-import { openArchive } from 'acronis-tib';
+import { openArchive } from 'tibreader';
 
 const archive = await openArchive('D:/Backups/MyBackup_full_b1_s1_v1.tib');
 try {
@@ -212,4 +212,8 @@ Following the True Image documentation (https://kb.acronis.com/content/1772):
 
 License
 -------
-MIT (see `LICENSE`). Originally written by Dennis Shtatnov.
+MIT (see `LICENSE`).
+
+Maintained by [prasadvagdargi](https://github.com/prasadvagdargi). Based on
+[dennisss/acronis-tib](https://github.com/dennisss/acronis-tib) by Dennis Shtatnov (2018), whose
+original history is kept in this repository.

@@ -474,7 +474,7 @@ function packageVersion(): string {
 		let file = path.join(dir, 'package.json');
 		if(fs.existsSync(file)) {
 			let pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
-			if(pkg.name === 'acronis-tib') {
+			if(pkg.name === 'tibreader') {
 				return pkg.version;
 			}
 		}

@@ -16,7 +16,7 @@ export default abstract class Archive {
 	/**
 	 * Opens an archive given the name of any file in the archive. Files are only ever read.
 	 *
-	 * NOTE: Formats register themselves when imported. Import from the package root ('acronis-tib'),
+	 * NOTE: Formats register themselves when imported. Import from the package root ('tibreader'),
 	 * which loads both the Mac and Windows formats.
 	 */
 	static async Open(fileName: string): Promise<Archive> {

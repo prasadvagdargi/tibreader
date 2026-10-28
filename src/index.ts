@@ -1,5 +1,5 @@
 /**
- * acronis-tib: read, verify, extract and mount Acronis True Image (.tib) backups.
+ * tibreader: read, verify, extract and mount Acronis True Image (.tib) backups.
  *
  * Importing this module registers both supported formats (Windows and Mac).
  */

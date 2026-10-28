@@ -1,5 +1,5 @@
 {
-	"name": "acronis-tib",
+	"name": "tibreader",
 	"version": "0.1.0",
 	"private": true,
 	"description": "Read, verify, extract and mount Acronis True Image (.tib) backups",
@@ -20,12 +20,22 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/dennisss/acronis-tib.git"
+		"url": "git+https://github.com/prasadvagdargi/tibreader.git"
+	},
+	"homepage": "https://github.com/prasadvagdargi/tibreader#readme",
+	"bugs": {
+		"url": "https://github.com/prasadvagdargi/tibreader/issues"
 	},
 	"author": {
-		"name": "Dennis Shtatnov",
-		"url": "https://github.com/dennisss"
+		"name": "prasadvagdargi",
+		"url": "https://github.com/prasadvagdargi"
 	},
+	"contributors": [
+		{
+			"name": "Dennis Shtatnov",
+			"url": "https://github.com/dennisss"
+		}
+	],
 	"files": [
 		"dist",
 		"README.md",
