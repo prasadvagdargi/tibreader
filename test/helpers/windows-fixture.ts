@@ -32,12 +32,15 @@ export interface FixtureOptions {
 	trimZeros?: boolean;
 	/** Store a wrong MD5 for the first block of this file */
 	corruptHashOf?: string;
+	/** Store no data for this file, using the 0x0007 record index kind seen in a real backup */
+	noDataFor?: string;
 }
 
 const MAGIC = 0xA2B924CE;
 const FS_TRAILER = Buffer.from('2C8AE194', 'hex');
 const SBS_TRAILER = Buffer.from('2B8AE194', 'hex');
 const INDEX_MAGIC = Buffer.from('0102001001000000', 'hex');
+const NO_DATA_INDEX_MAGIC = Buffer.from('0102070001000000', 'hex');
 
 const u32 = (v: number) => { let b = Buffer.alloc(4); b.writeUInt32LE(v, 0); return b; };
 const u64 = (v: number) => { let b = Buffer.alloc(8); b.writeBigUInt64LE(BigInt(v), 0); return b; };
@@ -146,6 +149,15 @@ export function writeWindowsBackup(dir: string, entries: FixtureEntry[], opts: F
 	let indexes = new Map<string, Buffer>();
 	for(let e of entries) {
 		if(e.kind !== 'file' || !e.data || e.data.length === 0) {
+			continue;
+		}
+
+		if(opts.noDataFor === e.path) {
+			// Layout seen in the real backup: no handles, the security descriptor, then one range
+			indexes.set(e.path, Buffer.concat([
+				NO_DATA_INDEX_MAGIC, u64(e.data.length), u32(0), Buffer.alloc(64),
+				u32(1), u32(0), u32(e.data.length), Buffer.alloc(8)
+			]));
 			continue;
 		}
 

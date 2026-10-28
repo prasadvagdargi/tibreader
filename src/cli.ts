@@ -302,6 +302,7 @@ async function cmdExtract(args: string[], opts: Options) {
 async function cmdVerify(args: string[], opts: Options) {
 	return withArchive(args[0], async (archive) => {
 		let problems = 0;
+		let unstored = 0;
 
 		// Opening already checked every header, footer, trailer and the metadata of each backup point
 		for(let v of archive.volumes) {
@@ -332,7 +333,10 @@ async function cmdVerify(args: string[], opts: Options) {
 				try {
 					if(snapshot instanceof WindowsFS) {
 						// Checks each block against its stored MD5
-						await snapshot.verifyFile(e.path);
+						let blocks = await snapshot.verifyFile(e.path);
+						if(blocks === 0 && e.size > 0) {
+							unstored++;
+						}
 					}
 					else {
 						// Decompressing every block checks its structure
@@ -356,7 +360,8 @@ async function cmdVerify(args: string[], opts: Options) {
 			}
 		}
 
-		out(problems === 0 ? 'OK: no problems found' : problems + ' problem(s) found');
+		let note = unstored > 0 ? ' (' + unstored + ' file(s) have no data stored in the backup and read as zeros)' : '';
+		out((problems === 0 ? 'OK: no problems found' : problems + ' problem(s) found') + note);
 		return problems === 0 ? 0 : 1;
 	});
 }

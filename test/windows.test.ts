@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { openArchive, FormatError, NotSupportedError, WindowsFS } from '../src/index';
+import { openArchive, FormatError, NotSupportedError, WindowsFS, setWarningHandler } from '../src/index';
 import { standardEntries, tempDir, writeWindowsBackup, FixtureEntry } from './helpers/windows-fixture';
 
 
@@ -137,6 +137,34 @@ describe('Windows backups (synthetic)', () => {
 			assert.equal((await vfs.read('/C/hello.txt', 0, 5)).toString(), 'hello');
 		}
 		finally {
+			await a.close();
+		}
+
+		removeDir(dir);
+	});
+
+	test('reads a file with no stored data as zeros, with a warning', async () => {
+		let dir = tempDir();
+		let entries = standardEntries();
+		let file = writeWindowsBackup(dir, entries, { noDataFor: 'C:/hello.txt' });
+
+		let warnings: string[] = [];
+		setWarningHandler((m) => warnings.push(m));
+
+		let a = await openArchive(file);
+		try {
+			let vfs = await a.getSlice().openFileSystem() as WindowsFS;
+			assert.equal((await vfs.stat('/C/hello.txt'))!.size, 12);
+			assert.ok((await vfs.read('/C/hello.txt', 0, 100)).equals(Buffer.alloc(12)));
+			assert.equal(await vfs.verifyFile('/C/hello.txt'), 0);
+			assert.ok(warnings.some((w) => /hello\.txt has no data stored/.test(w)), warnings.join('\n'));
+
+			// Everything else still reads normally
+			let big = entries.find((e) => e.path.endsWith('big.bin'))!.data!;
+			assert.ok((await vfs.read('/C/Docs/big.bin', 0, big.length)).equals(big));
+		}
+		finally {
+			setWarningHandler(undefined);
 			await a.close();
 		}
 

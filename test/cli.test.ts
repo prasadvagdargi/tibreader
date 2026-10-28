@@ -78,6 +78,17 @@ describe('tib command line', () => {
 		assert.match(bad.err, /FAILED \/C\/Docs\/big\.bin/);
 	});
 
+	test('verify reports files with no stored data without failing', () => {
+		let ndir = path.join(dir, 'nodata');
+		fs.mkdirSync(ndir);
+		let nodata = writeWindowsBackup(ndir, standardEntries(), { noDataFor: 'C:/Docs/Café notes.txt' });
+
+		let r = tib('verify', nodata, '-q');
+		assert.equal(r.code, 0, r.err);
+		assert.match(r.out, /OK: no problems found \(1 file\(s\) have no data stored/);
+		assert.match(r.err, /Café notes\.txt has no data stored in the backup; it reads as zeros/);
+	});
+
 	test('reports usage errors with exit code 2', () => {
 		assert.equal(tib('frobnicate', backup).code, 2);
 		assert.equal(tib('ls').code, 2);

@@ -6,8 +6,9 @@ import { warn } from '../log';
 // See doc/Format-Windows.md for the layouts parsed here
 
 
-// Always the first 8 bytes of a RecordIndex
-const RECORD_INDEX_MAGIC = Buffer.from('0102001001000000', 'hex');
+// A RecordIndex starts with 01 02, a 16-bit kind, then 01 00 00 00
+const INDEX_KIND_BLOCKS = 0x1000; /**< The usual kind: the file's data is stored in blocks */
+const INDEX_KIND_NO_DATA = 0x0007; /**< Seen once: no blocks stored, one range over the whole file */
 
 export enum RecordType {
 	Attributes = 1, /**< uint32 Windows file attributes of an entry */
@@ -87,6 +88,7 @@ export interface ConfigRecord extends OpaqueRecord {
 
 export interface IndexRecord extends OpaqueRecord {
 	type: RecordType.RecordIndex;
+	kind: number; /**< 0x1000 normally; 0x0007 when no data blocks are stored (see doc/Format-Windows.md) */
 	totalSize: number;
 	handles: RecordHandle[];
 }
@@ -344,9 +346,14 @@ function parseListing(data: Buffer): ListingEntry[] {
 }
 
 
-function parseIndex(data: Buffer): { totalSize: number; handles: RecordHandle[] } {
-	if(data.length < 20 || !RECORD_INDEX_MAGIC.equals(data.subarray(0, 8))) {
-		throw new FormatError('Bad record index magic');
+function parseIndex(data: Buffer): { kind: number; totalSize: number; handles: RecordHandle[] } {
+	if(data.length < 20 || data[0] !== 0x01 || data[1] !== 0x02 || data.readUInt32LE(4) !== 1) {
+		throw new FormatError('Bad record index magic: ' + data.subarray(0, 8).toString('hex'));
+	}
+
+	let kind = data.readUInt16LE(2);
+	if(kind !== INDEX_KIND_BLOCKS && kind !== INDEX_KIND_NO_DATA) {
+		warn('Unknown record index kind 0x' + kind.toString(16) + '; reading it like the usual kind');
 	}
 
 	let pos = 8;
@@ -369,9 +376,14 @@ function parseIndex(data: Buffer): { totalSize: number; handles: RecordHandle[] 
 		handles.push({ startOffset, recordOffset, hash });
 	}
 
-	// A security descriptor follows the handles (not needed for reading)
+	// A security descriptor follows the handles (not needed for reading). In the no-data kind, a list of
+	// ranges follows it (one range covering the whole file has been seen)
+
+	if(kind === INDEX_KIND_NO_DATA && handles.length > 0) {
+		warn('Record index of kind 0x0007 unexpectedly lists ' + handles.length + ' data blocks');
+	}
 
 	handles.sort((a, b) => a.startOffset - b.startOffset);
 
-	return { totalSize, handles };
+	return { kind, totalSize, handles };
 }

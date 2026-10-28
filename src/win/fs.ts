@@ -119,6 +119,12 @@ export class WindowsFS extends TreeFS<WinNodeData> {
 					warn('Size mismatch for ' + node.entry.path + ': listing says ' + data.listing.size + ', index says ' + meta.index.totalSize);
 				}
 
+				// True Image sometimes records a file without storing any of its data (seen once, kind 0x0007).
+				// Unstored data reads as zeros, as elsewhere in the format, but say so rather than hide it.
+				if(meta.index.handles.length === 0 && data.listing.size > 0) {
+					warn(node.entry.path + ' has no data stored in the backup; it reads as zeros');
+				}
+
 				return new WindowsFileContent(this._reader, meta.index, this._cache);
 			})();
 
