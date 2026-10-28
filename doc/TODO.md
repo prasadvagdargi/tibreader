@@ -157,4 +157,4 @@ Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
         since it adds a Start menu entry and a file association)
   - [ ] Code signing (SmartScreen warns about unsigned downloads)
   - [ ] Drag-and-drop to Explorer by hand (Windows' own drag loop can't be automated)
-  - [ ] Try the app on the real 55 GB backup (`TIB_SAMPLE`)
+  - [x] Try the app on the real 55 GB backup (`TIB_SAMPLE`; `gui/test/e2e/real-backup.spec.ts`)

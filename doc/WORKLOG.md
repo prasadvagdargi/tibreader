@@ -339,3 +339,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    - It checks that the tag matches `gui/package.json`, then runs all tests, `npm run dist` and the e2e
      tests (including the packaged app).
    - It creates a **draft** release with the three files using `gh`, with no third-party actions.
+6. On the real 55 GB backup (only read), with `TIB_SAMPLE` set: `gui/test/e2e/real-backup.spec.ts`.
+   - The app opens it and Backup info counts 8,538 files, 674 folders, 52.8 GB (matching the library's
+     full verify).
+   - Searching for a file the library picked finds it in about a second.
+   - Copy to writes the same bytes and modified time as the library reads (`G:\$TXRAJNL.DAT`, 1 MB).

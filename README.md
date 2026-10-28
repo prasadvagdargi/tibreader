@@ -188,7 +188,9 @@ npm install
 ```bash
 npm run dev
 ```
-`npm run test:e2e` builds the app and drives it with Playwright on synthetic backups.
+`npm run test:e2e` builds the app and drives it with Playwright on synthetic backups. With
+`TIB_SAMPLE` set, it also opens that real backup (read-only). The mount tests need WinFsp and rclone,
+and the packaged-app test needs `npm run dist` first; otherwise they're skipped.
 
 
 Library usage
