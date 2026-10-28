@@ -3,7 +3,8 @@
 node_modules
 .DS_Store
 dist/
-build/
+# Compiled tests (only at the top: gui/build holds the app icon)
+/build/
 knowledge_base
 out
 ext
