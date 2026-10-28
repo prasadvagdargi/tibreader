@@ -9,12 +9,12 @@ import fs from 'node:fs';
 import nodePath from 'node:path';
 import {
 	openArchive, describeArchive, extractItems, findRclone, findWinFsp, freeDriveLetters, measure, RcloneMount, safeFileName,
-	setWarningHandler, WebDavServer, WindowsFS,
+	setWarningHandler, verifyHeaders, verifySnapshot, WebDavServer, WindowsFS,
 	type Archive, type SnapshotFS, type FsEntry, type ConflictChoice as LibraryChoice
 } from 'tibreader';
 import type {
 	BackupInfo, ConflictChoice, ConflictPolicy, Contents, CopyResult, EngineMessage, EngineMethods, EngineRequest, Entry,
-	EntryDetails, ErrorInfo, MountInfo, MountStatus, Result
+	EntryDetails, ErrorInfo, MountInfo, MountStatus, Result, SearchResult, VerifyReport
 } from '../shared/api';
 
 
@@ -174,6 +174,35 @@ async function runCopy(jobId: string, slice: number, paths: string[], dest: stri
 }
 
 
+/** Registers a job that can be cancelled, for the time 'run' takes */
+async function asJob<T>(jobId: string, run: (job: Job) => Promise<T>): Promise<T> {
+	if(jobs.has(jobId)) {
+		throw new Error('Job ' + jobId + ' is already running');
+	}
+	let job: Job = { abort: new AbortController(), pending: new Map(), nextConflict: 1 };
+	jobs.set(jobId, job);
+	try {
+		return await run(job);
+	}
+	finally {
+		jobs.delete(jobId);
+	}
+}
+
+/** "*.jpg", "report?.doc" match whole names; anything else matches part of a name. Case-insensitive. */
+function nameMatcher(query: string): (name: string) => boolean {
+	let q = query.trim().toLowerCase();
+	if(/[*?]/.test(q)) {
+		let re = new RegExp('^' + q.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+		return (name) => re.test(name);
+	}
+	return (name) => name.toLowerCase().includes(q);
+}
+
+/** Lets waiting messages (like Cancel) in during long loops over the in-memory file list */
+const breathe = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+
 type Handlers = { [M in keyof EngineMethods]: (...args: Parameters<EngineMethods[M]>) => Promise<ReturnType<EngineMethods[M]>> };
 
 const handlers: Handlers = {
@@ -269,6 +298,65 @@ const handlers: Handlers = {
 		}
 		job.pending.delete(conflictId);
 		resolve(choice);
+	},
+
+	async verify(jobId: string, slice: number): Promise<VerifyReport> {
+		return asJob(jobId, async (job) => {
+			let snap = await snapshot(slice);
+			let totals = await measure(snap);
+			let last = 0;
+			let r = await verifySnapshot(snap, {
+				signal: job.abort.signal,
+				totals,
+				onProgress: (p) => {
+					let now = Date.now();
+					if(now - last >= 100 || p.files === p.totalFiles) {
+						last = now;
+						send({ type: 'event', event: { name: 'job-progress', progress: { jobId, ...p } } });
+					}
+				},
+			});
+			return {
+				files: r.files,
+				bytes: r.bytes,
+				problems: [...verifyHeaders(archive!), ...r.problems],
+				unstored: r.unstored,
+			};
+		});
+	},
+
+	async search(jobId: string, slice: number, folder: string, query: string, limit: number): Promise<SearchResult> {
+		return asJob(jobId, async (job) => {
+			let snap = await snapshot(slice);
+			let top = await snap.stat(folder);
+			if(!top || top.type !== 'directory') {
+				throw Object.assign(new Error('Not a folder in this backup: ' + folder), { code: 'not-found' });
+			}
+
+			let matches = nameMatcher(query);
+			let entries: Entry[] = [];
+			let truncated = false;
+			let n = 0;
+			for await (let e of snap.walk(top.path)) {
+				if(++n % 5000 === 0) {
+					await breathe();
+					job.abort.signal.throwIfAborted();
+				}
+				if(e.path === top.path || !matches(e.name)) {
+					continue;
+				}
+				if(entries.length >= limit) {
+					truncated = true;
+					break;
+				}
+				entries.push(toEntry(e));
+			}
+			return { entries, truncated };
+		});
+	},
+
+	async serverUrl(slice: number): Promise<string> {
+		return (await serverFor(slice)).url;
 	},
 
 	async mountStatus(): Promise<MountStatus> {

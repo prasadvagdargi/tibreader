@@ -8,6 +8,7 @@ import type { AppEvent, TibBridge } from '../shared/api';
 
 const bridge: TibBridge = {
 	appInfo: () => ipcRenderer.invoke('app:info'),
+	setTheme: (theme) => ipcRenderer.invoke('app:set-theme', theme),
 	pickBackup: () => ipcRenderer.invoke('dialog:pick-backup'),
 	takeInitialFile: () => ipcRenderer.invoke('window:take-initial-file'),
 	openBackup: (file) => ipcRenderer.invoke('session:open', file),

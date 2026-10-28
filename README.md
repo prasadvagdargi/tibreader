@@ -147,6 +147,19 @@ Desktop app (Windows, in progress)
 - Open a file (a read-only copy), or Edit a copy.
 - Mount as a drive letter (rclone is bundled; the app offers to install WinFsp, which asks for
   administrator permission once). While mounted, copying and dragging come straight from the drive.
+- Search, preview (images, video, audio, text), properties with Windows attributes, Verify, light/dark theme.
+
+| Keys | Does |
+|---|---|
+| Enter, double-click | Open a folder, or a read-only copy of a file |
+| Backspace, Alt+Up | Up one folder |
+| Alt+Left / Alt+Right, mouse back/forward | Back / Forward |
+| Ctrl+C | Copy, then paste in File Explorer |
+| Ctrl+A, Shift/Ctrl+click, Ctrl+Space | Select |
+| Ctrl+F | Search this folder and the folders in it |
+| Alt+P | Show or hide the details pane |
+| Ctrl+O | Open another backup |
+| Typing a name | Jump to it |
 
 The backup itself is never changed. Packaged downloads (portable exe, zip, installer) are next; see
 `doc/Plan-desktop-app.md`. For mounting from source, run `npm run fetch-rclone` in `gui/` once (or

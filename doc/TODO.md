@@ -147,6 +147,9 @@ Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
       staging, Ctrl+C clipboard (PowerShell `Set-Clipboard -LiteralPath`, paths on stdin), drag-out
 - [x] M4 mount: bundled rclone, WinFsp detection and install, drive letter picker, mounted paths for
       clipboard/drag/open, clean unmount on quit or crash
-- [ ] M5 polish: preview pane, search, Verify dialog, properties with attributes, shortcuts, Settings, recent files
+- [x] M5 polish: preview pane, search, Verify dialog, properties with attributes, shortcuts, theme choice,
+      recent files, resizable folder pane
+  - [ ] Real Windows file-type icons (`app.getFileIcon` needs a file on disk; Fluent icons for now)
+  - [ ] PDF preview (needs Chromium's PDF viewer in a sandboxed frame)
 - [ ] M6 packaging: portable exe, zip, NSIS installer with `.tib` association; single instance; portable data
       folder; release workflow; README section

@@ -1,22 +1,25 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type React from 'react';
 import {
 	Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, Button, Caption1, Dialog, DialogActions, DialogBody,
-	DialogContent, DialogSurface, DialogTitle, Dropdown, Link, makeStyles, Menu, MenuDivider, MenuItem, MenuList, MenuPopover,
-	MenuTrigger, MessageBar, MessageBarBody, Option, Toast, Toaster, ToastBody, ToastTitle, Toolbar, ToolbarButton, ToolbarDivider,
-	tokens, Tooltip, useId, useToastController, type ToastIntent,
+	DialogContent, DialogSurface, DialogTitle, Dropdown, Link, makeStyles, Menu, MenuDivider, MenuItem, MenuItemRadio, MenuList,
+	MenuPopover, MenuTrigger, MessageBar, MessageBarBody, Option, SearchBox, Toast, Toaster, ToastBody, ToastTitle, ToggleButton,
+	Toolbar, ToolbarButton, ToolbarDivider, tokens, Tooltip, useId, useToastController, type ToastIntent,
 } from '@fluentui/react-components';
 import {
 	Archive16Regular, ArrowCounterclockwise20Regular, ArrowLeft20Regular, ArrowRight20Regular, ArrowUp20Regular, ChevronDown16Regular,
-	Copy20Regular, Dismiss20Regular, Edit20Regular, FolderArrowRight20Regular, FolderOpen20Regular, HardDrive20Regular,
-	Info20Regular, Open20Regular, PlugDisconnected20Regular,
+	Copy20Regular, DarkTheme20Regular, Dismiss20Regular, DocumentCopy20Regular, Edit20Regular, FolderArrowRight20Regular,
+	FolderOpen20Regular, HardDrive20Regular, Info20Regular, MoreHorizontal20Regular, Open20Regular, PanelRight20Regular,
+	PlugDisconnected20Regular, ShieldCheckmark20Regular,
 } from '@fluentui/react-icons';
-import type { ConflictPolicy, Entry, MountInfo, Session } from '../../../shared/api';
+import type { ConflictPolicy, Entry, MountInfo, SearchResult, Session, ThemeChoice } from '../../../shared/api';
 import { call, errorCode, errorMessage, tib } from '../api';
 import { friendlyError } from '../errors';
 import { displayName, driveLabel } from '../fileTypes';
 import { baseName, dirName, formatDate, formatSize, plural } from '../format';
 import { useJobs } from '../jobs';
 import { ConflictDialog } from './ConflictDialog';
+import { DetailsPane, originalPath } from './DetailsPane';
 import { FileList } from './FileList';
 import { ancestors, FolderTree } from './FolderTree';
 import { InfoPanel } from './InfoPanel';
@@ -24,6 +27,7 @@ import { JobsButton } from './JobsButton';
 import { MountDialog } from './MountDialog';
 import { RestoreDialog } from './RestoreDialog';
 import { TitleBar } from './TitleBar';
+import { VerifyDialog } from './VerifyDialog';
 
 
 const useStyles = makeStyles({
@@ -68,9 +72,36 @@ const useStyles = makeStyles({
 		minHeight: 0,
 	},
 	tree: {
-		width: '250px',
 		flexShrink: 0,
 		overflow: 'auto',
+	},
+	splitter: {
+		width: '6px',
+		flexShrink: 0,
+		cursor: 'col-resize',
+		marginLeft: '-3px',
+		marginRight: '-3px',
+		zIndex: 1,
+		':hover': { backgroundColor: tokens.colorNeutralStroke2 },
+		':focus-visible': { outline: '2px solid ' + tokens.colorStrokeFocus2 },
+	},
+	search: {
+		width: '240px',
+		flexShrink: 0,
+	},
+	mainRow: {
+		flex: 1,
+		display: 'flex',
+		minHeight: 0,
+	},
+	listWrap: {
+		flex: 1,
+		minWidth: 0,
+	},
+	details: {
+		width: '300px',
+		flexShrink: 0,
+		borderLeft: '1px solid ' + tokens.colorNeutralStroke2,
 	},
 	main: {
 		flex: 1,
@@ -114,6 +145,29 @@ function sliceLabel(created: string, incremental: boolean): string {
 /** Copies to the clipboard first make temporary copies, so big ones get a warning */
 const CLIPBOARD_WARN_BYTES = 2 * 1024 * 1024 * 1024;
 
+/** Small per-window preferences (pane sizes); may be unavailable, which is fine */
+function stored<T>(key: string, fallback: T): T {
+	try {
+		let v = window.localStorage.getItem('tibreader.' + key);
+		return v === null ? fallback : JSON.parse(v);
+	}
+	catch(e) {
+		return fallback;
+	}
+}
+
+function store(key: string, value: unknown) {
+	try {
+		window.localStorage.setItem('tibreader.' + key, JSON.stringify(value));
+	}
+	catch(e) {
+		// Not important
+	}
+}
+
+/** Search results stop here; narrow the search to see the rest */
+const SEARCH_LIMIT = 5000;
+
 /** A point on the screen for the right-click menu to open at */
 function pointAt(x: number, y: number) {
 	return { getBoundingClientRect: () => ({ x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0 }) as DOMRect };
@@ -141,8 +195,17 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 	let [bigClipboard, setBigClipboard] = useState<{ paths: string[]; bytes: number } | null>(null);
 	let [mounted, setMounted] = useState<MountInfo | null>(null);
 	let [mountOpen, setMountOpen] = useState(false);
+	let [verifyOpen, setVerifyOpen] = useState(false);
+	let [detailsOpen, setDetailsOpen] = useState(() => stored('details', true));
+	let [treeWidth, setTreeWidth] = useState(() => stored('treeWidth', 250));
+	let [theme, setTheme] = useState<ThemeChoice>('system');
+	let [query, setQuery] = useState('');
+	let [results, setResults] = useState<SearchResult | null>(null);
+	let [searching, setSearching] = useState(false);
 	let loadSeq = useRef(0);
 	let crumbsRef = useRef<HTMLDivElement>(null);
+	let searchRef = useRef<HTMLInputElement>(null);
+	let searchJob = useRef<string | null>(null);
 
 	let jobs = useJobs(sid);
 	let toasterId = useId('toaster');
@@ -192,6 +255,49 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 		);
 	}, [sid, slice, path]);
 
+	useEffect(() => {
+		void tib.appInfo().then((a) => setTheme(a.theme));
+	}, []);
+
+	// Search below the shown folder, a moment after typing stops; a new search stops the old one
+	useEffect(() => {
+		let q = query.trim();
+		if(searchJob.current) {
+			void call(sid, 'cancel', searchJob.current).catch(() => {});
+			searchJob.current = null;
+		}
+		if(!q) {
+			setResults(null);
+			setSearching(false);
+			return;
+		}
+		let id = crypto.randomUUID();
+		let timer = setTimeout(() => {
+			searchJob.current = id;
+			setSearching(true);
+			call(sid, 'search', id, slice, path, q, SEARCH_LIMIT).then(
+				(r) => {
+					if(searchJob.current === id) {
+						setResults(r);
+						setSelected(new Set());
+						setSearching(false);
+						searchJob.current = null;
+					}
+				},
+				(e) => {
+					if(searchJob.current === id) {
+						setSearching(false);
+						searchJob.current = null;
+						if(errorCode(e) !== 'cancelled') {
+							notifyError(e);
+						}
+					}
+				}
+			);
+		}, 250);
+		return () => clearTimeout(timer);
+	}, [query, slice, path, sid]);
+
 	// The drive letter can also go away by itself (rclone stopped)
 	useEffect(() => tib.onEvent((ev) => {
 		if(ev.name === 'mount-changed' && ev.sessionId === sid) {
@@ -214,7 +320,10 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 	// ---- Navigation
 
 	let navigate = useCallback((to: string, focus?: string) => {
+		setQuery('');
 		if(to === path) {
+			// Leaving search results for the folder they're in
+			setFocusPath(focus);
 			return;
 		}
 		setBack((b) => [...b, path]);
@@ -267,7 +376,9 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 
 	// ---- Getting files out
 
-	let selectedEntries = useMemo(() => entries.filter((e) => selected.has(e.path)), [entries, selected]);
+	/** What the list shows: the folder, or search results */
+	let shown = results ? results.entries : entries;
+	let selectedEntries = useMemo(() => shown.filter((e) => selected.has(e.path)), [shown, selected]);
 	let selectedPaths = selectedEntries.map((e) => e.path);
 	let single = selectedEntries.length === 1 ? selectedEntries[0] : null;
 
@@ -275,7 +386,7 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 		if(paths.length !== 1) {
 			return plural(paths.length, 'item', 'items');
 		}
-		let e = entries.find((x) => x.path === paths[0]);
+		let e = shown.find((x) => x.path === paths[0]);
 		return e ? displayName(e, info.format) : baseName(paths[0]);
 	};
 
@@ -439,6 +550,59 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 	/** The selection, or the one entry right-clicked if it isn't part of it */
 	let pathsFor = (entry: Entry | null) => (entry && !selected.has(entry.path) ? [entry.path] : selectedPaths);
 
+	let copyPath = async (paths: string[]) => {
+		try {
+			await navigator.clipboard.writeText(paths.map((p) => originalPath(p, info.format)).join('\r\n'));
+			notify('success', paths.length === 1 ? 'Path copied' : plural(paths.length, 'path', 'paths') + ' copied',
+				'Where ' + (paths.length === 1 ? 'it was' : 'they were') + ' on the backed-up computer.');
+		}
+		catch(e) {
+			notifyError(e);
+		}
+	};
+
+	let chooseTheme = (t: ThemeChoice) => {
+		setTheme(t);
+		void tib.setTheme(t);
+	};
+
+	let toggleDetails = useCallback(() => {
+		setDetailsOpen((open: boolean) => {
+			store('details', !open);
+			return !open;
+		});
+	}, []);
+
+	// Dragging the edge between the folder tree and the list
+	let startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+		let el = e.currentTarget;
+		el.setPointerCapture(e.pointerId);
+		let startX = e.clientX;
+		let startW = treeWidth;
+		let move = (ev: PointerEvent) => setTreeWidth(Math.max(160, Math.min(520, startW + ev.clientX - startX)));
+		let up = (ev: PointerEvent) => {
+			el.releasePointerCapture(ev.pointerId);
+			el.removeEventListener('pointermove', move);
+			el.removeEventListener('pointerup', up);
+			setTreeWidth((w: number) => {
+				store('treeWidth', w);
+				return w;
+			});
+		};
+		el.addEventListener('pointermove', move);
+		el.addEventListener('pointerup', up);
+	};
+
+	let resizeWithKeys = (e: React.KeyboardEvent) => {
+		let step = e.key === 'ArrowLeft' ? -16 : e.key === 'ArrowRight' ? 16 : 0;
+		if(step) {
+			e.preventDefault();
+			let w = Math.max(160, Math.min(520, treeWidth + step));
+			setTreeWidth(w);
+			store('treeWidth', w);
+		}
+	};
+
 
 	// ---- Shortcuts that work anywhere in the window
 
@@ -448,6 +612,8 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 			else if(e.altKey && e.key === 'ArrowRight') { goForward(); e.preventDefault(); }
 			else if(e.altKey && e.key === 'ArrowUp') { goUp(); e.preventDefault(); }
 			else if(e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'o') { void pickAnother(); e.preventDefault(); }
+			else if(e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'f') { searchRef.current?.focus(); searchRef.current?.select(); e.preventDefault(); }
+			else if(e.altKey && !e.ctrlKey && e.key.toLowerCase() === 'p') { toggleDetails(); e.preventDefault(); }
 		};
 		// The back/forward buttons on many mice
 		let onMouse = (e: MouseEvent) => {
@@ -460,7 +626,7 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 			window.removeEventListener('keydown', onKey);
 			window.removeEventListener('mouseup', onMouse);
 		};
-	}, [goBack, goForward, goUp, pickAnother]);
+	}, [goBack, goForward, goUp, pickAnother, toggleDetails]);
 
 
 	// ---- Layout
@@ -545,13 +711,37 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 						)
 						: <ToolbarButton icon={<HardDrive20Regular />} onClick={() => setMountOpen(true)}>Mount as drive...</ToolbarButton>}
 					<span className={s.spacer} />
+					<Tooltip content="Preview and details (Alt+P)" relationship="description">
+						<ToggleButton appearance="subtle" icon={<PanelRight20Regular />} checked={detailsOpen} onClick={toggleDetails}>Details</ToggleButton>
+					</Tooltip>
 					<ToolbarButton icon={<Info20Regular />} onClick={() => setInfoOpen(true)}>Backup info</ToolbarButton>
-					<Tooltip content="Open another backup (Ctrl+O)" relationship="label">
-						<ToolbarButton icon={<FolderOpen20Regular />} onClick={() => void pickAnother()} />
-					</Tooltip>
-					<Tooltip content="Close this backup" relationship="label">
-						<ToolbarButton icon={<Dismiss20Regular />} onClick={props.onClose} />
-					</Tooltip>
+					<Menu>
+						<MenuTrigger disableButtonEnhancement>
+							<Tooltip content="More" relationship="label">
+								<ToolbarButton icon={<MoreHorizontal20Regular />} />
+							</Tooltip>
+						</MenuTrigger>
+						<MenuPopover>
+							<MenuList>
+								<MenuItem icon={<ShieldCheckmark20Regular />} onClick={() => setVerifyOpen(true)}>Verify backup...</MenuItem>
+								<Menu checkedValues={{ theme: [theme] }} onCheckedValueChange={(_e, d) => chooseTheme(d.checkedItems[0] as ThemeChoice)}>
+									<MenuTrigger disableButtonEnhancement>
+										<MenuItem icon={<DarkTheme20Regular />}>Theme</MenuItem>
+									</MenuTrigger>
+									<MenuPopover>
+										<MenuList>
+											<MenuItemRadio name="theme" value="system">Same as Windows</MenuItemRadio>
+											<MenuItemRadio name="theme" value="light">Light</MenuItemRadio>
+											<MenuItemRadio name="theme" value="dark">Dark</MenuItemRadio>
+										</MenuList>
+									</MenuPopover>
+								</Menu>
+								<MenuDivider />
+								<MenuItem icon={<FolderOpen20Regular />} secondaryContent="Ctrl+O" onClick={() => void pickAnother()}>Open another backup...</MenuItem>
+								<MenuItem icon={<Dismiss20Regular />} onClick={props.onClose}>Close this backup</MenuItem>
+							</MenuList>
+						</MenuPopover>
+					</Menu>
 				</Toolbar>
 			</div>
 
@@ -583,10 +773,28 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 						))}
 					</Breadcrumb>
 				</div>
+				<SearchBox
+					className={s.search}
+					input={{ ref: searchRef }}
+					placeholder={'Search ' + crumbLabel(path, crumbs.length - 1)}
+					aria-label="Search this folder and the folders in it"
+					value={query}
+					onChange={(_e, d) => setQuery(d.value)}
+					onKeyDown={(e) => {
+						if(e.key === 'Escape') {
+							setQuery('');
+						}
+						else if(e.key === 'ArrowDown' || e.key === 'Enter') {
+							// Into the results
+							(document.querySelector('[role="grid"]') as HTMLElement | null)?.focus();
+							e.preventDefault();
+						}
+					}}
+				/>
 			</div>
 
 			<div className={s.body}>
-				<nav className={s.tree} aria-label="Folders">
+				<nav className={s.tree} aria-label="Folders" style={{ width: treeWidth }}>
 					<FolderTree
 						sessionId={sid}
 						slice={slice}
@@ -596,30 +804,65 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 						onNavigate={(p) => navigate(p)}
 					/>
 				</nav>
+				<div
+					className={s.splitter}
+					role="separator"
+					aria-orientation="vertical"
+					aria-label="Resize the folder list"
+					aria-valuenow={treeWidth}
+					aria-valuemin={160}
+					aria-valuemax={520}
+					tabIndex={0}
+					onPointerDown={startResize}
+					onKeyDown={resizeWithKeys}
+				/>
 				<main className={s.main}>
 					{listError && (
 						<MessageBar intent="error">
 							<MessageBarBody>This folder couldn't be read: {listError}</MessageBarBody>
 						</MessageBar>
 					)}
-					<FileList
-						entries={entries}
-						format={info.format}
-						loading={loading}
-						selected={selected}
-						onSelect={setSelected}
-						onOpen={(e) => void openEntry(e)}
-						onUp={goUp}
-						onCopy={() => void copyClipboard(selectedPaths)}
-						onContextMenu={(e, entry) => setMenu({ x: e.clientX, y: e.clientY, entry })}
-						onDragOut={(paths) => void dragOut(paths)}
-						focusPath={focusPath}
-					/>
+					<div className={s.mainRow}>
+						<div className={s.listWrap}>
+							<FileList
+								entries={shown}
+								format={info.format}
+								loading={loading || searching}
+								selected={selected}
+								onSelect={setSelected}
+								onOpen={(e) => void openEntry(e)}
+								onUp={goUp}
+								onCopy={() => void copyClipboard(selectedPaths)}
+								onContextMenu={(e, entry) => setMenu({ x: e.clientX, y: e.clientY, entry })}
+								onDragOut={(paths) => void dragOut(paths)}
+								focusPath={results ? undefined : focusPath}
+								emptyText={results ? 'Nothing here matches "' + query.trim() + '".' : undefined}
+								showFolder={results ? (e) => originalPath(parentOf(e.path), info.format) : undefined}
+							/>
+						</div>
+						{detailsOpen && (
+							<aside className={s.details} aria-label="Details">
+								<DetailsPane
+									sessionId={sid}
+									slice={slice}
+									format={info.format}
+									selected={selectedEntries}
+									folderName={crumbLabel(path, crumbs.length - 1)}
+									folderCount={shown.length}
+									onOpen={(e) => void openEntry(e)}
+								/>
+							</aside>
+						)}
+					</div>
 				</main>
 			</div>
 
 			<footer className={s.status}>
-				<Caption1>{plural(entries.length, 'item', 'items')}</Caption1>
+				<Caption1>
+					{results
+						? plural(results.entries.length, 'result', 'results') + (results.truncated ? ' (the first ' + SEARCH_LIMIT.toLocaleString() + '; search for something more specific)' : '')
+						: plural(entries.length, 'item', 'items')}
+				</Caption1>
 				{selectedEntries.length > 0 && (
 					<Caption1>
 						{plural(selectedEntries.length, 'item', 'items')} selected
@@ -649,13 +892,15 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 							{menu.entry.type === 'directory' && (
 								<MenuItem icon={<ArrowCounterclockwise20Regular />} onClick={() => setRestoreSource(menu.entry)}>Restore...</MenuItem>
 							)}
+							{results && (
+								<MenuItem icon={<FolderOpen20Regular />} onClick={() => navigate(parentOf(menu.entry!.path), menu.entry!.path)}>Open folder location</MenuItem>
+							)}
+							<MenuDivider />
+							<MenuItem icon={<DocumentCopy20Regular />} onClick={() => void copyPath(pathsFor(menu.entry))}>Copy original path</MenuItem>
 							{mountedHere && (
-								<>
-									<MenuDivider />
-									<MenuItem icon={<HardDrive20Regular />} onClick={() => void tib.showOnDrive(sid, slice, menu.entry!.path)}>
-										Show in drive {mounted!.letter}
-									</MenuItem>
-								</>
+								<MenuItem icon={<HardDrive20Regular />} onClick={() => void tib.showOnDrive(sid, slice, menu.entry!.path)}>
+									Show in drive {mounted!.letter}
+								</MenuItem>
 							)}
 						</MenuList>
 					)}
@@ -707,6 +952,16 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 					</DialogBody>
 				</DialogSurface>
 			</Dialog>
+
+			{verifyOpen && (
+				<VerifyDialog
+					sessionId={sid}
+					slice={slice}
+					sliceCreated={point.created}
+					format={info.format}
+					onClose={() => setVerifyOpen(false)}
+				/>
+			)}
 
 			{mountOpen && (
 				<MountDialog

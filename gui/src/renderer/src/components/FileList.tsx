@@ -175,6 +175,8 @@ export interface FileListProps {
 	/** Entry to focus when the list changes (e.g. the folder we came up from) */
 	focusPath?: string;
 	emptyText?: string;
+	/** Search results: show each entry's folder instead of its type */
+	showFolder?: (entry: Entry) => string;
 }
 
 /**
@@ -192,8 +194,9 @@ export function FileList(p: FileListProps) {
 	let typeahead = useRef({ text: '', time: 0 });
 
 	let width = useWidth(scrollRef);
-	let showType = width === 0 || width > 640;
-	let columns = showType ? 'minmax(200px, 1fr) 168px 150px 96px' : 'minmax(160px, 1fr) 150px 88px';
+	let showType = !p.showFolder && (width === 0 || width > 640);
+	let columns = p.showFolder ? 'minmax(160px, 1fr) minmax(120px, 1fr) 150px 88px'
+		: showType ? 'minmax(200px, 1fr) 168px 150px 96px' : 'minmax(160px, 1fr) 150px 88px';
 
 	let rows = useMemo(() => sortEntries(p.entries, sortKey, desc, p.format), [p.entries, sortKey, desc, p.format]);
 	let index = useMemo(() => new Map(rows.map((e, i) => [e.path, i])), [rows]);
@@ -401,6 +404,7 @@ export function FileList(p: FileListProps) {
 			>
 				<div className={s.header} role="row" style={{ gridTemplateColumns: columns }}>
 					{header('name', 'Name')}
+					{p.showFolder && <div role="columnheader" className={s.headerCell} style={{ cursor: 'default' }}>Folder</div>}
 					{header('mtime', 'Date modified')}
 					{showType && header('type', 'Type')}
 					{header('size', 'Size', true)}
@@ -468,6 +472,7 @@ export function FileList(p: FileListProps) {
 									{iconFor(e, p.format)}
 									<span className={s.name} title={e.name}>{displayName(e, p.format)}</span>
 								</div>
+								{p.showFolder && <div role="gridcell" className={s.cell} title={p.showFolder(e)}>{p.showFolder(e)}</div>}
 								<div role="gridcell" className={s.cell}>{formatDate(e.mtime)}</div>
 								{showType && <div role="gridcell" className={s.cell}>{typeOf(e, p.format).label}</div>}
 								<div role="gridcell" className={mergeClasses(s.cell, s.right)} style={{ textAlign: 'right' }}>

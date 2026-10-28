@@ -269,6 +269,38 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    - A test cleanup that ended every `rclone.exe` was rightly blocked by the safety check: it could
      end the user's own rclone. Cleanups only touch processes the tests recorded.
 7. Tests: 12 e2e. Three need WinFsp and rclone and skip without them (CI). They check:
+   (M5 brings the total to 16.)
    - real mount, reading through the drive, Ctrl+C giving drive paths, and unmount
    - ending the main process removes the drive
    - the startup cleanup ends a recorded process and spares one whose program file doesn't match
+
+
+2026-10-28: desktop app, M5 (polish)
+------------------------------------
+1. Details pane (Alt+P), on the right of the list:
+   - Previews of images, video and audio (streamed, so video can seek) and text (first 64 KB; UTF-8 or
+     UTF-16 by BOM).
+   - Properties: size, modified/created, Windows attributes, and where the item was on the backed-up
+     computer. For folders, what they contain. For several items, a total.
+   - Previews come through a private `tib-preview://<session>/<backup point>/<path>` protocol.
+     Main forwards Range requests with `net.fetch` to the engine's secret-path WebDAV server.
+     - It needed `corsEnabled` plus an allow-origin header, because the page's `fetch` (text previews)
+       is cross-origin from `file://`.
+     - `<img>` and `<video>` worked without that.
+2. Search (Ctrl+F) below the shown folder.
+   - Part of a name, or `*`/`?` wildcards; results show their folder.
+   - The engine walks the in-memory file list, yielding every 5,000 entries so a newer search can
+     cancel it; at most 5,000 results.
+   - Right-click "Open folder location".
+3. Verify (More > Verify backup):
+   - `verifySnapshot` in the engine with progress, Stop, and a list of damaged files with
+     "Copy list".
+   - Files stored without data are explained rather than reported as damaged.
+4. More menu: Verify, Theme (same as Windows / light / dark, saved in settings and applied through
+   `nativeTheme.themeSource`), Open another, Close. "Copy original path" (C:\...) in the right-click
+   menu. The folder pane can be resized by mouse or arrow keys and keeps its width.
+5. Light/dark now comes from main (`nativeTheme` plus a `theme-changed` event), not the page's media
+   query. That's more robust, and testable: Playwright pins pages' `prefers-color-scheme` to light.
+6. Deferred: native Windows file icons and PDF preview (TODO section 11).
+7. Tests: 16 e2e. New: search (text, wildcard, nothing found, Escape); text and image previews and
+   properties; Verify on good and damaged backups; Copy original path; dark theme.

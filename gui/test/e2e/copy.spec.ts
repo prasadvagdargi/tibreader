@@ -58,7 +58,7 @@ test('Copy to copies the selection with its dates', async () => {
 		let list = await openDocs(win);
 		await list.getByRole('row', { name: /big\.bin/ }).click();
 		await list.getByRole('row', { name: /Café notes\.txt/ }).click({ modifiers: ['Control'] });
-		await expect(win.getByText('2 items selected')).toBeVisible();
+		await expect(win.getByRole('contentinfo').getByText('2 items selected')).toBeVisible();
 
 		await answerFolderDialogs(app, dest);
 		await win.getByRole('button', { name: 'Copy to...' }).click();

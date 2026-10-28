@@ -107,11 +107,32 @@ export interface EngineMethods {
 	stage(jobId: string, slice: number, paths: string[], dir: string, readOnly: boolean): CopyResult;
 	cancel(jobId: string): void;
 	answer(jobId: string, conflictId: number, choice: ConflictChoice, applyToAll: boolean): void;
+	/** Checks every data block of a backup point (reports progress like a copy) */
+	verify(jobId: string, slice: number): VerifyReport;
+	/** Files and folders below a folder whose names match (case-insensitive; * and ? work) */
+	search(jobId: string, slice: number, folder: string, query: string, limit: number): SearchResult;
+	/** Base address of the read-only server for a backup point (main uses it for previews) */
+	serverUrl(slice: number): string;
 	/** What mounting needs, and what is mounted */
 	mountStatus(): MountStatus;
 	/** Shows one backup point as a read-only drive letter (e.g. "R:") */
 	mount(slice: number, letter: string): MountInfo;
 	unmount(): void;
+}
+
+export interface VerifyReport {
+	files: number;
+	bytes: number;
+	/** Damaged files (and .tib headers whose checksum doesn't match) */
+	problems: Array<{ path: string; message: string }>;
+	/** Files recorded without data (they read as zeros) */
+	unstored: number;
+}
+
+export interface SearchResult {
+	entries: Entry[];
+	/** More matched than the limit */
+	truncated: boolean;
 }
 
 export interface MountInfo {
@@ -130,7 +151,9 @@ export interface MountStatus {
 }
 
 /** The engine methods a window may call directly; the rest go through main, which picks destinations */
-export const WINDOW_METHODS = ['list', 'stat', 'details', 'contents', 'measure', 'cancel', 'answer', 'mountStatus', 'mount', 'unmount'] as const;
+export const WINDOW_METHODS = [
+	'list', 'stat', 'details', 'contents', 'measure', 'cancel', 'answer', 'verify', 'search', 'mountStatus', 'mount', 'unmount',
+] as const;
 
 export type EngineMethod = keyof EngineMethods;
 export type EngineArgs<M extends EngineMethod> = Parameters<EngineMethods[M]>;
@@ -178,7 +201,8 @@ export type AppEvent =
 	{ name: 'job-progress'; sessionId: string; progress: JobProgress } |
 	{ name: 'job-conflict'; sessionId: string; conflict: JobConflict } |
 	/** lost: why the drive went away by itself */
-	{ name: 'mount-changed'; sessionId: string; mounted: MountInfo | null; lost?: string };
+	{ name: 'mount-changed'; sessionId: string; mounted: MountInfo | null; lost?: string } |
+	{ name: 'theme-changed'; dark: boolean };
 
 
 export interface RecentBackup {
@@ -189,9 +213,14 @@ export interface RecentBackup {
 	exists: boolean;
 }
 
+export type ThemeChoice = 'system' | 'light' | 'dark';
+
 export interface AppInfo {
 	version: string;
 	portable: boolean;
+	theme: ThemeChoice;
+	/** The theme in effect now */
+	dark: boolean;
 }
 
 export interface Session {
@@ -204,6 +233,8 @@ export interface Session {
  */
 export interface TibBridge {
 	appInfo(): Promise<AppInfo>;
+	/** Light, dark, or follow Windows; applies to every window */
+	setTheme(theme: ThemeChoice): Promise<void>;
 	/** Shows the Open dialog; null if cancelled */
 	pickBackup(): Promise<string | null>;
 	/** The backup this window was opened for (file association, drop, second instance), once */

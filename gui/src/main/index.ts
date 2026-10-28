@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, protocol, shell, type IpcMainInvokeEvent } from 'electron';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,6 +29,62 @@ export interface SessionEntry {
 	mounted?: MountInfo;
 	/** The rclone process serving it */
 	rclone?: { pid: number; exe: string };
+	/** Read-only server address per backup point, for previews */
+	previewBase?: Map<number, Promise<string>>;
+}
+
+// Previews stream through tib-preview://<session>/<backup point>/<path>, with seeking (Range) for video
+protocol.registerSchemesAsPrivileged([
+	{ scheme: 'tib-preview', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+]);
+
+const PREVIEW_TYPES: Record<string, string> = {
+	jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp',
+	ico: 'image/x-icon', svg: 'image/svg+xml', avif: 'image/avif',
+	mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', ogv: 'video/ogg',
+	mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac', opus: 'audio/ogg',
+	txt: 'text/plain; charset=utf-8',
+};
+
+async function handlePreview(req: Request): Promise<Response> {
+	let u = new URL(req.url);
+	let s = sessions.get(u.hostname);
+	let m = /^\/(\d+)(\/.*)$/.exec(u.pathname);
+	if(!s || !m) {
+		return new Response('Not found', { status: 404 });
+	}
+
+	let slice = parseInt(m[1], 10);
+	s.previewBase ??= new Map();
+	let base = s.previewBase.get(slice);
+	if(!base) {
+		let host = s.host;
+		base = host.request('serverUrl', [slice]).then((r) => {
+			if(!r.ok) {
+				throw new Error(r.error.message);
+			}
+			return r.value;
+		});
+		base.catch(() => s!.previewBase!.delete(slice));
+		s.previewBase.set(slice, base);
+	}
+
+	let range = req.headers.get('range');
+	let upstream = await net.fetch((await base) + m[2].slice(1), { headers: range ? { Range: range } : {} });
+
+	let headers = new Headers();
+	for(let h of ['content-length', 'content-range', 'accept-ranges', 'last-modified']) {
+		let v = upstream.headers.get(h);
+		if(v) {
+			headers.set(h, v);
+		}
+	}
+	let ext = m[2].slice(m[2].lastIndexOf('.') + 1).toLowerCase();
+	headers.set('content-type', PREVIEW_TYPES[ext] || 'application/octet-stream');
+	headers.set('cache-control', 'no-store');
+	// The app's own page (file://) reads text previews with fetch; nothing else loads this scheme
+	headers.set('access-control-allow-origin', '*');
+	return new Response(upstream.body, { status: upstream.status, headers });
 }
 
 const sessions = new Map<string, SessionEntry>();
@@ -75,7 +131,9 @@ function start() {
 
 	void app.whenReady().then(() => {
 		settings = new Settings();
+		nativeTheme.themeSource = settings.theme;
 		Menu.setApplicationMenu(null);
+		protocol.handle('tib-preview', (req) => handlePreview(req).catch((err) => new Response(String(err?.message || err), { status: 500 })));
 		registerIpc();
 		fileIpc = registerFileIpc(ownedSession, settings, (owner) =>
 			[...sessions.values()].filter((s) => s.owner === owner && s.mounted).map((s) => s.mounted!.letter));
@@ -281,7 +339,24 @@ function ownedSession(e: IpcMainInvokeEvent, id: unknown): SessionEntry | undefi
 
 
 function registerIpc() {
-	ipcMain.handle('app:info', (): AppInfo => ({ version: app.getVersion(), portable }));
+	ipcMain.handle('app:info', (): AppInfo => ({ version: app.getVersion(), portable, theme: settings.theme, dark: nativeTheme.shouldUseDarkColors }));
+
+	// Light/dark changed (Windows setting, or the app's own Theme choice): tell every window
+	nativeTheme.on('updated', () => {
+		for(let w of BrowserWindow.getAllWindows()) {
+			if(!w.isDestroyed()) {
+				w.webContents.send('app:event', { name: 'theme-changed', dark: nativeTheme.shouldUseDarkColors } satisfies AppEvent);
+			}
+		}
+	});
+
+	ipcMain.handle('app:set-theme', (_e, theme: unknown) => {
+		if(theme === 'system' || theme === 'light' || theme === 'dark') {
+			settings.theme = theme;
+			// Every window follows: their prefers-color-scheme changes with this
+			nativeTheme.themeSource = theme;
+		}
+	});
 
 	ipcMain.handle('dialog:pick-backup', async (e) => {
 		let win = BrowserWindow.fromWebContents(e.sender);

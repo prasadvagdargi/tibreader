@@ -48,6 +48,7 @@ interface StoredSettings {
 	recent: Array<{ file: string; name: string; lastOpened: number }>;
 	/** The folder last copied into, offered next time */
 	lastFolder?: string;
+	theme?: 'system' | 'light' | 'dark';
 }
 
 const MAX_RECENT = 12;
@@ -72,6 +73,9 @@ export class Settings {
 			if(parsed && typeof parsed.lastFolder === 'string') {
 				this._data.lastFolder = parsed.lastFolder;
 			}
+			if(parsed && ['system', 'light', 'dark'].includes(parsed.theme)) {
+				this._data.theme = parsed.theme;
+			}
 		}
 		catch(e) {
 			// First start, or an unreadable file: start fresh
@@ -91,6 +95,15 @@ export class Settings {
 			{ file, name, lastOpened: Date.now() },
 			...this._data.recent.filter((r) => r.file.toLowerCase() !== key),
 		].slice(0, MAX_RECENT);
+		this.save();
+	}
+
+	get theme(): 'system' | 'light' | 'dark' {
+		return this._data.theme || 'system';
+	}
+
+	set theme(theme: 'system' | 'light' | 'dark') {
+		this._data.theme = theme;
 		this.save();
 	}
 

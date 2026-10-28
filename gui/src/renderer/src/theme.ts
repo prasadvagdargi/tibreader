@@ -3,15 +3,20 @@ import { webDarkTheme, webLightTheme, type Theme } from '@fluentui/react-compone
 import { tib } from './api';
 
 
-/** Light or dark, following Windows (Settings > Personalization > Colors) */
+/**
+ * Light or dark, as main decides: the Windows setting (Settings > Personalization > Colors), or the
+ * app's own Theme choice. Starts from the page's media query to avoid a flash before main answers.
+ */
 export function useSystemTheme(): { theme: Theme; dark: boolean } {
 	let [dark, setDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
 
 	useEffect(() => {
-		let mq = window.matchMedia('(prefers-color-scheme: dark)');
-		let onChange = (e: MediaQueryListEvent) => setDark(e.matches);
-		mq.addEventListener('change', onChange);
-		return () => mq.removeEventListener('change', onChange);
+		void tib.appInfo().then((a) => setDark(a.dark));
+		return tib.onEvent((ev) => {
+			if(ev.name === 'theme-changed') {
+				setDark(ev.dark);
+			}
+		});
 	}, []);
 
 	let theme = dark ? webDarkTheme : webLightTheme;
