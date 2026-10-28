@@ -64,6 +64,86 @@ function findInWingetPackages(packagesDir: string): string | null {
 }
 
 /**
+ * Finds WinFsp, the driver rclone needs for drive letters on Windows. Returns its install folder, or
+ * null if it isn't installed (or this isn't Windows).
+ */
+export async function findWinFsp(): Promise<string | null> {
+	if(process.platform !== 'win32') {
+		return null;
+	}
+
+	let dirs = [ process.env['ProgramFiles(x86)'], process.env.ProgramFiles ]
+		.filter((d): d is string => !!d)
+		.map((d) => path.join(d, 'WinFsp'));
+
+	for(let d of dirs) {
+		if(await pathExists(path.join(d, 'bin', 'winfsp-x64.dll'))) {
+			return d;
+		}
+	}
+
+	// Installed somewhere else: the installer records the folder in the registry
+	let out = await run(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'reg.exe'),
+		[ 'query', 'HKLM\\SOFTWARE\\WOW6432Node\\WinFsp', '/v', 'InstallDir' ]);
+	let m = out && /InstallDir\s+REG_SZ\s+(.+)/.exec(out);
+	if(m) {
+		let d = m[1].trim().replace(/[\\/]+$/, '');
+		if(await pathExists(path.join(d, 'bin', 'winfsp-x64.dll'))) {
+			return d;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Drive letters (e.g. "R:") that nothing uses on this computer, from Z: down to D:. Windows only.
+ */
+export async function freeDriveLetters(): Promise<string[]> {
+	if(process.platform !== 'win32') {
+		return [];
+	}
+
+	let used = new Set<string>();
+
+	// Lists every letter in use, including empty card readers and network drives
+	let out = await run(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+		[ '-NoProfile', '-NonInteractive', '-Command', '[System.IO.Directory]::GetLogicalDrives() -join ","' ]);
+
+	if(out !== null) {
+		for(let d of out.split(',')) {
+			let m = /^([A-Za-z]):/.exec(d.trim());
+			if(m) {
+				used.add(m[1].toUpperCase());
+			}
+		}
+	}
+	else {
+		// No PowerShell: probe each letter instead (misses empty card readers)
+		await Promise.all(LETTERS.map(async (l) => {
+			if(await pathExists(l + ':\\')) {
+				used.add(l);
+			}
+		}));
+	}
+
+	return LETTERS.filter((l) => !used.has(l)).reverse().map((l) => l + ':');
+}
+
+const LETTERS = 'DEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+/** Runs a program and returns its output, or null if it couldn't run or failed */
+function run(file: string, args: string[]): Promise<string | null> {
+	return new Promise((resolve) => {
+		let child = spawn(file, args, { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+		let out = '';
+		child.stdout!.on('data', (d) => { out += d.toString(); });
+		child.on('error', () => resolve(null));
+		child.on('close', (code) => resolve(code === 0 ? out : null));
+	});
+}
+
+/**
  * Accepts "R" or "R:" on Windows (returns "R:"); anything else is used as a folder path
  */
 export function normalizeDriveTarget(target: string, platform: NodeJS.Platform = process.platform): string {
@@ -83,11 +163,20 @@ export class RcloneMount {
 
 	private _child: ChildProcess | null = null;
 	private _onExit = () => { this._child?.kill(); };
+	private _stopping = false;
+
+	/** Called if rclone stops by itself after mounting (the drive is gone), with its last error output */
+	onUnexpectedExit?: (stderr: string) => void;
 
 	constructor(private _url: string, private _target: string, private _volumeName = 'Backup') {}
 
 	get target() {
 		return this._target;
+	}
+
+	/** rclone's process id while mounted */
+	get pid(): number | undefined {
+		return this._child?.pid;
 	}
 
 	async mount(timeoutMs = 30000): Promise<void> {
@@ -97,6 +186,13 @@ export class RcloneMount {
 				'Mounting as a drive needs rclone' + (process.platform === 'win32' ? ' and WinFsp' : ' and FUSE') + '. ' +
 				(process.platform === 'win32' ? 'Install them with "winget install WinFsp.WinFsp" and "winget install Rclone.Rclone"' : 'See https://rclone.org/install/') +
 				' (or set TIB_RCLONE to rclone\'s path). Without them, use the WebDAV address directly.'
+			);
+		}
+
+		if(process.platform === 'win32' && !(await findWinFsp())) {
+			throw new NotSupportedError(
+				'Mounting as a drive needs WinFsp. Install it with "winget install WinFsp.WinFsp" (or from https://winfsp.dev), ' +
+				'then try again. Without it, use the WebDAV address directly.'
 			);
 		}
 
@@ -143,6 +239,15 @@ export class RcloneMount {
 
 			await new Promise((r) => setTimeout(r, 250));
 		}
+
+		child.once('exit', () => {
+			if(!this._stopping && this._child === child) {
+				this.cleanup();
+				if(this.onUnexpectedExit) {
+					this.onUnexpectedExit(stderr.trim());
+				}
+			}
+		});
 	}
 
 	async unmount(): Promise<void> {
@@ -151,6 +256,7 @@ export class RcloneMount {
 			return;
 		}
 
+		this._stopping = true;
 		if(child.exitCode === null && child.signalCode === null) {
 			await new Promise<void>((resolve) => {
 				let timer = setTimeout(() => { child!.kill('SIGKILL'); resolve(); }, 10000);
@@ -165,6 +271,7 @@ export class RcloneMount {
 
 	private cleanup() {
 		this._child = null;
+		this._stopping = false;
 		process.off('exit', this._onExit);
 	}
 }

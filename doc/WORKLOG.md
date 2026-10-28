@@ -116,3 +116,231 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
   `.tibx` (True Image 2020+), plus NTFS inside disk images. All documented from real files.
 - Found that True Image 2010-2013 headers (version 1, length `0x20`) would be sent to our Mac parser.
 - Plan, risks and what not to copy: `Plan-tib-reader.md`; items added to `TODO.md`.
+
+
+2026-10-27: desktop app plan
+----------------------------
+- Goal from the maintainer: a clean, portable GUI so anyone can open a backup, browse it, and copy,
+  paste, drag, restore ("clone") or open/edit copies of files. Windows first; other OSes later.
+- Decisions:
+  - Electron + Fluent UI React v9, in a new `gui/` folder, so the library stays dependency-free and the
+    app calls it directly (no CLI parsing).
+  - Backups stay read-only; "move" and "edit" mean working on copies.
+  - rclone is bundled; WinFsp (a driver that needs admin once) gets a one-click install offer.
+  - Three packages: portable exe, zip, NSIS installer.
+- Findings that shaped the plan:
+  - Decompression and MD5 checks are synchronous, so the library runs in a separate Electron
+    `utilityProcess` (one per open backup), never in the UI or main process. This also avoids the
+    same-process deadlock noted in `src/mount/rclone.ts` when Explorer reads a mounted drive during a drag.
+  - `WebDavServer` accepted any `Host` header, so a web page could read an open backup through DNS
+    rebinding. The plan adds a Host check and a secret base path (helps the CLI too).
+  - Electron can't put a list of files on the Windows clipboard. Windows PowerShell 5.1's
+    `Set-Clipboard -LiteralPath` can (checked here; PowerShell 7 dropped it). Paths go in through stdin
+    because names from a backup are untrusted.
+- Full plan: `Plan-desktop-app.md`; milestones in `TODO.md` section 11. Work on the `desktop-app` branch,
+  committed and pushed after each step.
+
+
+2026-10-27: desktop app, M1 (library groundwork)
+------------------------------------------------
+1. `extract()` gained `conflict` (fail/overwrite/skip/rename or a function), `signal` (cancel),
+   `onProgress` and `onRenamed`; the result also counts `skipped`.
+   - A cancelled or failed file is removed.
+   - An overwrite writes next to the original and renames over it at the end, so cancelling keeps
+     the original.
+   - "rename" picks `name (2).ext` like Explorer.
+2. New `extractItems()`, which copies a selection like a file manager (folders included), and `measure()`.
+3. `verifySnapshot()`/`verifyHeaders()` (`src/verify.ts`) and `describeArchive()` (`src/info.ts`), moved
+   out of the CLI. `tib info`/`verify` output is unchanged (CLI tests pass).
+4. Errors carry a `code`: not-a-backup, unexpected-name, missing-part, damaged, encrypted, disk-image, unsupported.
+5. `WebDavServer` checks the Host header on loopback (blocks DNS rebinding) and can serve below a
+   secret `basePath`; `tib mount --drive` uses one.
+6. `findWinFsp()`, `freeDriveLetters()`, `RcloneMount.pid` and `onUnexpectedExit`. `--drive` now says
+   clearly when WinFsp is missing.
+7. Tests: 77 pass (21 new, in `test/library.test.ts` and `test/extract-webdav.test.ts`).
+   - Checked by hand on this machine: a synthetic backup mounted as Z: through the secret path, its
+     files read back correctly, and the drive went away on unmount.
+
+
+2026-10-28: desktop app, M2 (app skeleton)
+------------------------------------------
+1. Dependencies pinned to exact versions at least two weeks old (supply-chain caution):
+   - Electron 44.7.1 (45.1.0 was a day old), electron-vite 5.0.0 (6.0.0 was too new), Vite 7.3.7
+     (electron-vite 5 supports up to 7), React 19.3.0, Fluent UI 9.74.9, Playwright 1.64.0.
+   - npm 11 holds back install scripts by default. esbuild's script stays unapproved, since its binary
+     comes from `@esbuild/win32-x64` anyway.
+   - Electron 44 no longer downloads its binary on install. `node node_modules/electron/install.js` does it
+     (checked against the checksums shipped in the package); CI runs it too.
+   - The install isn't stuck when it seems to be: Fluent's icons are ~60,000 files and take several
+     minutes on Windows.
+2. Processes:
+   - main (`gui/src/main`): windows, dialogs, single instance, settings.
+   - one engine `utilityProcess` per open backup (`gui/src/engine`); it bundles the library from `../src`.
+   - sandboxed renderer with a typed preload bridge (`gui/src/preload`, contract in `gui/src/shared/api.ts`).
+   - Results cross processes as `{ok, value}` / `{ok, error: {code, message}}`, so error codes survive IPC.
+   - Main checks that a window owns a session before using it.
+   - Navigation, new windows and webviews are blocked.
+   - A strict CSP is injected into the built page.
+3. UI (Fluent 2, follows the Windows light/dark setting):
+   - Start screen: drop zone, Open button, recent backups.
+   - Backup window: title bar with the backup point picker, command bar, Back/Forward/Up, breadcrumb,
+     lazy folder tree, a virtualized details list with Explorer-style selection, keyboard and typeahead,
+     a status bar and the Info panel.
+   - Friendly errors by code (encrypted, disk image, missing part, renamed, not a backup, damaged...).
+4. Tests: `npm run test:e2e` (Playwright `_electron`) opens synthetic backups from the library's test helpers.
+   It browses, selects, goes Up, opens Info, and shows the encrypted-backup error.
+   - Screenshots land in `gui/test-results/`.
+   - CI gets a Windows job for the app (typecheck + e2e).
+
+
+2026-10-28: desktop app, M3 (getting files out)
+-----------------------------------------------
+1. Engine jobs (`copy`, `stage`):
+   - built on `extractItems`, with progress events (at most ~10 a second), cancel, and "file already
+     there" questions sent to the window. "Do this for all" is remembered per job.
+   - Errors come back as `cancelled` / `no-space` / `io` codes.
+2. Main (`gui/src/main/files.ts`):
+   - A window can only copy into folders picked in a folder dialog (an approved list per window).
+   - Temporary copies go to `%TEMP%\TibReader\staging\<random>` and are removed after a day, on a later
+     start: Explorer may still paste them, so they can't go when the backup closes.
+   - Open uses a read-only temporary copy.
+   - Ctrl+C: a fixed PowerShell 5.1 script sets a multi-file CF_HDROP. Paths go in as base64 JSON on
+     stdin, so non-English names survive and names never become code; a name containing `$(whoami)`
+     was tested and stayed text.
+   - Dragging stages the selection, then calls `webContents.startDrag` with the real shell icon; more
+     than 200 MB gets "use Copy to" instead.
+3. UI:
+   - Command bar: Copy to / Copy / Open / Edit a copy / Restore.
+   - A right-click menu; Ctrl+C; rows can be dragged.
+   - A jobs button in the status bar with progress, speed, time left and Cancel.
+   - A conflict dialog (Replace / Keep both / Skip / Stop, "for all").
+   - A Restore dialog: what, how big, where, free space, what to do with existing files.
+   - Toasts with "Show" in folder.
+   - A clipboard copy over 2 GB offers Copy to instead.
+4. Bug found by the tests: a `className` on `FluentProvider` is copied onto Fluent's portal layers, so
+   `height: 100%` there made an invisible sheet over the window that swallowed every click. The
+   provider now only gets `style`, and the layout lives in a child div.
+5. e2e (9 tests) stub the main process's `dialog.showOpenDialog`, `shell.openPath` and
+   `webContents.startDrag` through `app.evaluate`, with no test hooks in the app. They check:
+   - copied bytes and dates
+   - Keep both
+   - Restore
+   - read-only Open vs writable Edit a copy
+   - the real Windows clipboard (Ctrl+C test; it overwrites the clipboard while it runs)
+   - what a drag hands to Windows
+
+   Not automated: the OS drag-and-drop itself (Windows' modal drag loop) needs a manual check.
+6. Gotcha while editing: PowerShell 5.1's `Get-Content` reads UTF-8 files as ANSI by default; a
+   scripted replace turned "Café" into "CafÃ©". Edit files with the editor tools, or pass `-Encoding UTF8`.
+
+
+2026-10-28: desktop app, M4 (mount as a drive)
+----------------------------------------------
+1. The engine mounts a backup point as a read-only drive letter: a secret-path `WebDavServer` per
+   backup point, plus `RcloneMount`. It reports the mount and rclone's pid/exe to main, and unmounts
+   before it exits.
+2. While mounted, Ctrl+C, dragging and Open use the drive's own paths: instant, any size, no
+   temporary copies.
+   - "Show in drive R:" is in the right-click menu.
+   - Names that aren't valid on Windows (Mac backups) still use temporary copies.
+3. Mount dialog:
+   - free letters (Z: down; R: preferred, last choice remembered)
+   - a WinFsp check, and **Install WinFsp** via `winget install --exact --id WinFsp.WinFsp`
+     (Windows asks for permission); without winget it opens winfsp.dev
+   - The command bar shows "Drive R:" with Open in File Explorer / Unmount.
+4. rclone is bundled.
+   - `npm run fetch-rclone` downloads rclone 1.75.1 (the tested version) and checks it against the
+     SHA-256 pinned from rclone's signed SHA256SUMS. It keeps only `rclone.exe` plus the MIT notice
+     from rclone.org/licence.
+   - Its `rclone.exe` is byte-identical to the one winget installed here.
+   - Main points the engine at it through `TIB_RCLONE`.
+5. Leftover drives: main records rclone's pid and program file in `mounts.json`.
+   - If TibReader is ended from Task Manager, the engine notices main is gone (it checks every 2 s)
+     and unmounts.
+   - If that fails too, the next start ends the recorded rclone, but only if that process id still
+     runs the same rclone.exe.
+6. Bugs and lessons found by the tests:
+   - The mount dialog opened with every button disabled ("Checking..."). Fluent's focus trap then
+     marked the open dialog `aria-hidden`, hiding it from screen readers (and from role-based test
+     queries). Something must stay focusable when a dialog opens, so Cancel now always is.
+     Dialogs are created fresh on open.
+   - On Windows, Playwright's `app.process()` is a launcher, not Electron's main process. Killing it
+     leaves the app running. Tests that end the app use `app.evaluate(() => process.pid)`.
+   - A test cleanup that ended every `rclone.exe` was rightly blocked by the safety check: it could
+     end the user's own rclone. Cleanups only touch processes the tests recorded.
+7. Tests: 12 e2e. Three need WinFsp and rclone and skip without them (CI). They check:
+   (M5 brings the total to 16.)
+   - real mount, reading through the drive, Ctrl+C giving drive paths, and unmount
+   - ending the main process removes the drive
+   - the startup cleanup ends a recorded process and spares one whose program file doesn't match
+
+
+2026-10-28: desktop app, M5 (polish)
+------------------------------------
+1. Details pane (Alt+P), on the right of the list:
+   - Previews of images, video and audio (streamed, so video can seek) and text (first 64 KB; UTF-8 or
+     UTF-16 by BOM).
+   - Properties: size, modified/created, Windows attributes, and where the item was on the backed-up
+     computer. For folders, what they contain. For several items, a total.
+   - Previews come through a private `tib-preview://<session>/<backup point>/<path>` protocol.
+     Main forwards Range requests with `net.fetch` to the engine's secret-path WebDAV server.
+     - It needed `corsEnabled` plus an allow-origin header, because the page's `fetch` (text previews)
+       is cross-origin from `file://`.
+     - `<img>` and `<video>` worked without that.
+2. Search (Ctrl+F) below the shown folder.
+   - Part of a name, or `*`/`?` wildcards; results show their folder.
+   - The engine walks the in-memory file list, yielding every 5,000 entries so a newer search can
+     cancel it; at most 5,000 results.
+   - Right-click "Open folder location".
+3. Verify (More > Verify backup):
+   - `verifySnapshot` in the engine with progress, Stop, and a list of damaged files with
+     "Copy list".
+   - Files stored without data are explained rather than reported as damaged.
+4. More menu: Verify, Theme (same as Windows / light / dark, saved in settings and applied through
+   `nativeTheme.themeSource`), Open another, Close. "Copy original path" (C:\...) in the right-click
+   menu. The folder pane can be resized by mouse or arrow keys and keeps its width.
+5. Light/dark now comes from main (`nativeTheme` plus a `theme-changed` event), not the page's media
+   query. That's more robust, and testable: Playwright pins pages' `prefers-color-scheme` to light.
+6. Deferred: native Windows file icons and PDF preview (TODO section 11).
+7. Tests: 16 e2e. New: search (text, wildcard, nothing found, Escape); text and image previews and
+   properties; Verify on good and damaged backups; Copy original path; dark theme.
+
+
+2026-10-28: desktop app, M6 (packaging)
+---------------------------------------
+1. Icon:
+   - `gui/build/icon.svg` (an archive box on Fluent blue) is the source.
+   - `npm run icon` renders it to `icon.png` with Electron's offscreen capture (no image tools needed).
+   - electron-builder makes the .ico.
+2. electron-builder 26.17.0 (pinned, over two weeks old), `gui/electron-builder.yml`. Targets:
+   - NSIS installer: per-user, folder choice, Start menu, `.tib` association.
+   - portable exe: `unpackDirName` keeps one temp folder.
+   - zip.
+   Packaging details:
+   - `extraResources` ships `rclone.exe` with its licence, and TibReader's licence.
+   - The asar holds `out/` plus the library's four small dependencies.
+   - Sizes: installer and portable exe ~135 MB, zip ~174 MB (rclone is 81 MB of it).
+   - There is no top-level `zip:` key; the zip's name is `win.artifactName`.
+3. Portable mode:
+   - The portable exe is recognized by `PORTABLE_EXECUTABLE_DIR`.
+   - The zip build is recognized as a packaged app without `Uninstall TibReader.exe` beside it.
+   - Settings go to `TibReader Data` beside the exe (falling back to %APPDATA% when that folder is
+     read-only).
+   - Chromium's caches go to `%TEMP%` (`sessionData`), so a USB stick only gets `settings.json`.
+4. Checked on this machine:
+   - `release/win-unpacked/TibReader.exe` (what the zip holds), driven by Playwright through
+     `executablePath` (`test/e2e/packaged.spec.ts`): portable data folder, browsing, and a real mount
+     through the bundled rclone (the recorded rclone path is the one in `resources/`).
+   - The portable exe, copied to another folder and started: it unpacks for about 15 s on first start,
+     opens, writes only its data folder beside itself, and closes cleanly.
+   - The installer was built but not installed here (it would add a Start menu entry and a file
+     association); TODO lists it as a manual check.
+5. `.github/workflows/release.yml`: a `v*` tag runs on windows-latest.
+   - It checks that the tag matches `gui/package.json`, then runs all tests, `npm run dist` and the e2e
+     tests (including the packaged app).
+   - It creates a **draft** release with the three files using `gh`, with no third-party actions.
+6. On the real 55 GB backup (only read), with `TIB_SAMPLE` set: `gui/test/e2e/real-backup.spec.ts`.
+   - The app opens it and Backup info counts 8,538 files, 674 folders, 52.8 GB (matching the library's
+     full verify).
+   - Searching for a file the library picked finds it in about a second.
+   - Copy to writes the same bytes and modified time as the library reads (`G:\$TXRAJNL.DAT`, 1 MB).

@@ -78,7 +78,7 @@ export default abstract class Volume {
 
 		let magic = headerBlock.readUInt32LE(0);
 		if(magic !== VOLUME_MAGIC) {
-			throw new FormatError('Not a .tib file (wrong magic number)');
+			throw new FormatError('Not a .tib file (wrong magic number)', 'not-a-backup');
 		}
 
 		// Should be 24 00 01 00 for Mac

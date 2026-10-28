@@ -3,10 +3,16 @@
 node_modules
 .DS_Store
 dist/
-build/
+# Compiled tests (only at the top: gui/build holds the app icon)
+/build/
 knowledge_base
 out
 ext
 mnt
 *.tib
 *.tib.metadata
+
+# Desktop app: downloaded rclone, packaged builds, test output
+gui/vendor/
+gui/release/
+gui/test-results/

@@ -2,9 +2,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { openArchive, Archive, Slice, FsEntry, SnapshotFS, VolumeVersion } from './index';
-import { extract } from './fs/extract';
-import { WindowsFS } from './win/fs';
+import { openArchive, Archive, Slice, FsEntry } from './index';
+import { extract, measure } from './fs/extract';
+import { describeArchive } from './info';
+import { verifyHeaders, verifySnapshot } from './verify';
 import { WebDavServer } from './mount/webdav';
 import { FuseMount } from './mount/fuse';
 import { RcloneMount, normalizeDriveTarget } from './mount/rclone';
@@ -129,47 +130,13 @@ async function withArchive<T>(file: string | undefined, fn: (a: Archive) => Prom
 	}
 }
 
-async function countContents(snapshot: SnapshotFS) {
-	let files = 0, folders = 0, bytes = 0;
-	for await (let e of snapshot.walk()) {
-		if(e.type === 'file') {
-			files++;
-			bytes += e.size;
-		}
-		else if(e.path !== '/') {
-			folders++;
-		}
-	}
-	return { files, folders, bytes };
-}
-
-
 async function cmdInfo(args: string[], opts: Options) {
 	await withArchive(args[0], async (archive) => {
-		let format = archive.volumes[0].header.version === VolumeVersion.Windows ? 'Windows' : 'Mac';
-
-		let volumes = await Promise.all(archive.volumes.map(async (v) => ({
-			file: v.fileName,
-			size: await v.reader.length(),
-			headerChecksumOk: v.header.checkSumValid
-		})));
-
-		let slices = [];
-		for(let i = 0; i < archive.slices.length; i++) {
-			let s = archive.slices[i];
-			let contents = await countContents(await s.openFileSystem());
-			slices.push({
-				number: i + 1,
-				id: s.id.toString('hex'),
-				created: s.creationTime.toISOString(),
-				incremental: s.parent !== null,
-				config: s.config,
-				contents
-			});
-		}
+		let info = await describeArchive(archive);
+		let { format, volumes, slices } = info;
 
 		if(opts.json) {
-			out(JSON.stringify({ name: archive.name, format, volumes, slices }, null, 2));
+			out(JSON.stringify(info, null, 2));
 			return;
 		}
 
@@ -199,7 +166,8 @@ async function cmdInfo(args: string[], opts: Options) {
 			if(c.includePaths && c.includePaths.length) {
 				out('      Included:    ' + c.includePaths.join(', '));
 			}
-			out('      Contents:    ' + s.contents.files.toLocaleString('en-US') + ' files, ' + s.contents.folders.toLocaleString('en-US') + ' folders, ' + formatSize(s.contents.bytes));
+			let contents = s.contents!;
+			out('      Contents:    ' + contents.files.toLocaleString('en-US') + ' files, ' + contents.folders.toLocaleString('en-US') + ' folders, ' + formatSize(contents.bytes));
 		}
 	});
 }
@@ -305,11 +273,9 @@ async function cmdVerify(args: string[], opts: Options) {
 		let unstored = 0;
 
 		// Opening already checked every header, footer, trailer and the metadata of each backup point
-		for(let v of archive.volumes) {
-			if(!v.header.checkSumValid) {
-				err('Header checksum mismatch: ' + v.fileName);
-				problems++;
-			}
+		for(let p of verifyHeaders(archive)) {
+			err(p.message + ': ' + p.path);
+			problems++;
 		}
 
 		let slices = opts.slice !== undefined ? [ pickSlice(archive, opts) ] : archive.slices;
@@ -317,47 +283,27 @@ async function cmdVerify(args: string[], opts: Options) {
 		for(let s of slices) {
 			let n = archive.slices.indexOf(s) + 1;
 			let snapshot = await s.openFileSystem();
-			let total = await countContents(snapshot);
+			let total = await measure(snapshot);
 			out('Backup point #' + n + ': ' + total.files.toLocaleString('en-US') + ' files, ' + formatSize(total.bytes));
 
 			if(opts.quick) {
 				continue;
 			}
 
-			let files = 0, bytes = 0, lastReport = Date.now();
-			for await (let e of snapshot.walk()) {
-				if(e.type !== 'file') {
-					continue;
-				}
-
-				try {
-					if(snapshot instanceof WindowsFS) {
-						// Checks each block against its stored MD5
-						let blocks = await snapshot.verifyFile(e.path);
-						if(blocks === 0 && e.size > 0) {
-							unstored++;
-						}
-					}
-					else {
-						// Decompressing every block checks its structure
-						for(let off = 0; off < e.size; off += 4 * 1024 * 1024) {
-							await snapshot.read(e.path, off, 4 * 1024 * 1024);
-						}
+			let lastReport = Date.now();
+			let result = await verifySnapshot(snapshot, {
+				totals: total,
+				onProblem: (p) => err('FAILED ' + p.path + ': ' + p.message),
+				onProgress: (p) => {
+					if(!opts.quiet && Date.now() - lastReport > 2000) {
+						lastReport = Date.now();
+						err('  checked ' + p.files.toLocaleString('en-US') + ' / ' + p.totalFiles.toLocaleString('en-US') + ' files, ' + formatSize(p.bytes) + ' / ' + formatSize(p.totalBytes));
 					}
 				}
-				catch(ex: any) {
-					err('FAILED ' + e.path + ': ' + ex.message);
-					problems++;
-				}
+			});
 
-				files++;
-				bytes += e.size;
-
-				if(!opts.quiet && Date.now() - lastReport > 2000) {
-					lastReport = Date.now();
-					err('  checked ' + files.toLocaleString('en-US') + ' / ' + total.files.toLocaleString('en-US') + ' files, ' + formatSize(bytes) + ' / ' + formatSize(total.bytes));
-				}
-			}
+			problems += result.problems.length;
+			unstored += result.unstored;
 		}
 
 		let note = unstored > 0 ? ' (' + unstored + ' file(s) have no data stored in the backup and read as zeros)' : '';
@@ -393,12 +339,13 @@ async function cmdMount(args: string[], opts: Options) {
 			stop = () => mount.unmount();
 		}
 		else if(opts.drive) {
-			// rclone talks to our WebDAV server over loopback; any free port will do
-			let server = new WebDavServer(snapshot);
+			// rclone talks to our WebDAV server over loopback; any free port will do. Only rclone uses
+			// the address, so a random path keeps other programs from reading the backup through it.
+			let server = new WebDavServer(snapshot, { basePath: WebDavServer.randomBasePath() });
 			let addr = await server.listen(parseIntOption(opts.port, 'port', 0), '127.0.0.1');
 
 			let target = normalizeDriveTarget(opts.drive);
-			let drive = new RcloneMount('http://127.0.0.1:' + addr.port + '/', target, archive.name);
+			let drive = new RcloneMount('http://127.0.0.1:' + addr.port + server.basePath, target, archive.name);
 			try {
 				await drive.mount();
 			}

@@ -1,0 +1,62 @@
+name: Release
+
+# Pushing a tag like v0.1.0 builds the Windows desktop app (installer, portable exe, zip), tests it,
+# and attaches the files to a draft GitHub release to review and publish by hand.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Desktop app for Windows
+    runs-on: windows-latest
+    permissions:
+      contents: write # to create the draft release
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            gui/package-lock.json
+
+      - name: The tag matches the app's version
+        shell: bash
+        run: |
+          version=$(node -p "require('./gui/package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match gui/package.json version $version" >&2
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm test
+      - run: npm ci
+        working-directory: gui
+      # Electron downloads its binary on first use; do it up front (checks its checksum)
+      - run: node node_modules/electron/install.js
+        working-directory: gui
+      - run: npm run typecheck
+        working-directory: gui
+      # Fetches the pinned rclone (checksum checked), builds, and packages all three targets
+      - run: npm run dist
+        working-directory: gui
+      # Includes the packaged-app test; the mount tests skip (no WinFsp on the runner)
+      - run: npx playwright test
+        working-directory: gui
+
+      - name: Draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            gui/release/TibReader-Setup-*.exe \
+            gui/release/TibReader-*-portable.exe \
+            gui/release/TibReader-*-win-x64.zip \
+            --draft --generate-notes --title "TibReader $GITHUB_REF_NAME"

@@ -1,0 +1,19 @@
+{
+	"compilerOptions": {
+		"target": "es2023",
+		"lib": ["es2023"],
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"types": ["node", "electron-vite/node"],
+		"strict": true,
+		"noImplicitOverride": true,
+		"noFallthroughCasesInSwitch": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"noEmit": true,
+		"paths": {
+			"tibreader": ["../src/index.ts"]
+		}
+	},
+	"include": ["electron.vite.config.ts", "src/main/**/*", "src/preload/**/*", "src/engine/**/*", "src/shared/**/*"]
+}

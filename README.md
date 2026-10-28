@@ -98,7 +98,9 @@ Set `TIB_RCLONE` if rclone isn't on the PATH.
 
 ### Without installing anything: WebDAV
 `tib mount` without `--drive` starts a read-only WebDAV server on `http://127.0.0.1:8642/` (this
-computer only; `--port` and `--host` change that). Every OS can open it with built-in tools.
+computer only; `--port` and `--host` change that). Every OS can open it with built-in tools. On
+127.0.0.1 it only answers requests addressed to `127.0.0.1`, `localhost` or `[::1]`, so web pages
+can't reach it through DNS rebinding. With `--drive`, the server also uses a random secret path.
 
 **Windows**: map it as a drive (File Explorer > This PC > Map network drive), or:
 ```bash
@@ -136,6 +138,61 @@ tib mount backup.tib --fuse ./mnt
 ```
 
 
+Desktop app (Windows)
+---------------------
+`gui/` holds TibReader, a desktop app for people who'd rather not use a command line:
+- Open a backup (or drop it on the window) and browse it like File Explorer, at any backup point.
+- Copy to... a folder, Copy (Ctrl+C) and paste in Explorer, or drag files out.
+- Restore a whole drive or folder, with a choice of what happens to files that are already there.
+- Open a file (a read-only copy), or Edit a copy.
+- Mount as a drive letter (rclone is bundled; the app offers to install WinFsp, which asks for
+  administrator permission once). While mounted, copying and dragging come straight from the drive.
+- Search, preview (images, video, audio, text), properties with Windows attributes, Verify, light/dark theme.
+
+| Keys | Does |
+|---|---|
+| Enter, double-click | Open a folder, or a read-only copy of a file |
+| Backspace, Alt+Up | Up one folder |
+| Alt+Left / Alt+Right, mouse back/forward | Back / Forward |
+| Ctrl+C | Copy, then paste in File Explorer |
+| Ctrl+A, Shift/Ctrl+click, Ctrl+Space | Select |
+| Ctrl+F | Search this folder and the folders in it |
+| Alt+P | Show or hide the details pane |
+| Ctrl+O | Open another backup |
+| Typing a name | Jump to it |
+
+The backup itself is never changed. Design notes: `doc/Plan-desktop-app.md`.
+
+**Downloads** (from the GitHub releases page), all for 64-bit Windows 10 and 11:
+
+| File | What it is |
+|---|---|
+| `TibReader-Setup-<version>.exe` | Installer (no administrator needed): Start menu entry, and double-clicking a `.tib` opens it |
+| `TibReader-<version>-portable.exe` | One file, nothing installed; keeps its settings in a `TibReader Data` folder beside it (good for a USB stick). Starts slower: it unpacks itself first |
+| `TibReader-<version>-win-x64.zip` | The same as a folder: unzip and run `TibReader.exe`; starts instantly; settings beside it too |
+
+The files aren't code-signed yet, so Windows SmartScreen may say "Windows protected your PC": choose
+**More info**, then **Run anyway**.
+
+**Building**: `npm run dist` in `gui/` makes all three in `gui/release/` (it downloads the pinned rclone
+first, checking its checksum). Pushing a `v<version>` tag does the same on GitHub and creates a draft
+release. For mounting while running from source, run `npm run fetch-rclone` once (or have rclone installed).
+
+To run it from source (after `npm install` and `npm run pretest` in the repository root):
+```bash
+cd gui
+```
+```bash
+npm install
+```
+```bash
+npm run dev
+```
+`npm run test:e2e` builds the app and drives it with Playwright on synthetic backups. With
+`TIB_SAMPLE` set, it also opens that real backup (read-only). The mount tests need WinFsp and rclone,
+and the packaged-app test needs `npm run dist` first; otherwise they're skipped.
+
+
 Library usage
 -------------
 ```ts
@@ -160,7 +217,20 @@ finally {
 
 Problems that don't stop reading (unknown flags, odd headers) are reported as warnings on stderr.
 Use `setWarningHandler()` to collect or silence them. Errors are thrown as `FormatError` (damaged or
-unknown data) or `NotSupportedError` (valid but unsupported, e.g. encrypted backups).
+unknown data) or `NotSupportedError` (valid but unsupported, e.g. encrypted backups). Both carry a
+`code` (`not-a-backup`, `unexpected-name`, `missing-part`, `damaged`, `encrypted`, `disk-image`,
+`unsupported`) so programs can explain the problem without parsing the message.
+
+Other helpers (all used by the CLI):
+
+| Function | What it does |
+|---|---|
+| `extractItems(fs, paths, dest, opts)` | Copy a selection like a file manager (each item as `dest/<name>`); `extract()` copies one folder's contents |
+| `opts` of both | `conflict` (`fail`, `overwrite`, `skip`, `rename` or a function), `signal` (cancel; unfinished files are removed, replaced files kept), `onProgress`, `onRenamed` |
+| `measure(fs, paths)` | Files, folders and bytes below some paths |
+| `verifySnapshot(fs, opts)` / `verifyHeaders(archive)` | Check every data block, with progress, per-file problems and cancel |
+| `describeArchive(archive)` | Plain-data summary (what `tib info --json` prints) |
+| `WebDavServer`, `RcloneMount`, `findRclone`, `findWinFsp`, `freeDriveLetters` | The pieces behind `tib mount` |
 
 
 Development

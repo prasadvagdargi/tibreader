@@ -28,6 +28,7 @@ Next steps (in priority order)
 6. **Windows attributes in mounts**: show hidden/system flags and creation times (needs a per-entry
    metadata read, so cache it).
 7. **Synthetic Mac fixture** following `Format-Mac.md`, so the Mac parser has end-to-end tests.
+8. **Desktop app** (Windows first): milestones in section 11, plan in `Plan-desktop-app.md`.
 
 
 1. Bugs found in review
@@ -132,3 +133,28 @@ Details, sizes and order in `Plan-tib-reader.md`.
 - [ ] Phase 2: NTFS reader (with `$ATTRIBUTE_LIST`, LZNT1, WOF/Xpress) and MBR/GPT partitions
 - [ ] Phase 3: `.tibx` (pages, LSM trees, Zstd segments, split files, backup chain)
 - [ ] Phase 4: encryption, only once real encrypted samples exist
+
+
+11. Desktop app (Windows first)
+-------------------------------
+Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
+- [x] M1 library groundwork: extract cancel/progress/conflicts, `extractItems`, `measure`, `verifySnapshot`,
+      `describeArchive`, error codes, WebDAV Host check + secret path, `findWinFsp`, `freeDriveLetters`, exports;
+      CLI refactored onto them with unchanged output
+- [x] M2 app skeleton: `gui/` (Electron + Fluent UI), engine utilityProcess per backup, typed IPC, Welcome,
+      browse (tree, list, breadcrumb, backup point picker), Info panel, friendly errors
+- [x] M3 getting files out: Copy to / Restore wizard, jobs flyout with cancel and conflicts, Open, Edit a copy,
+      staging, Ctrl+C clipboard (PowerShell `Set-Clipboard -LiteralPath`, paths on stdin), drag-out
+- [x] M4 mount: bundled rclone, WinFsp detection and install, drive letter picker, mounted paths for
+      clipboard/drag/open, clean unmount on quit or crash
+- [x] M5 polish: preview pane, search, Verify dialog, properties with attributes, shortcuts, theme choice,
+      recent files, resizable folder pane
+  - [ ] Real Windows file-type icons (`app.getFileIcon` needs a file on disk; Fluent icons for now)
+  - [ ] PDF preview (needs Chromium's PDF viewer in a sandboxed frame)
+- [x] M6 packaging: portable exe, zip, NSIS installer with `.tib` association; single instance; portable data
+      folder; release workflow; README section
+  - [ ] Try the installer by hand: install, double-click a `.tib`, uninstall (not done on the build machine,
+        since it adds a Start menu entry and a file association)
+  - [ ] Code signing (SmartScreen warns about unsigned downloads)
+  - [ ] Drag-and-drop to Explorer by hand (Windows' own drag loop can't be automated)
+  - [x] Try the app on the real 55 GB backup (`TIB_SAMPLE`; `gui/test/e2e/real-backup.spec.ts`)

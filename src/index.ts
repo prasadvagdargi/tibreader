@@ -18,8 +18,24 @@ export type { FsEntry, SnapshotFS, EntryType } from './fs/types';
 export { WindowsFS } from './win/fs';
 export { MacFS } from './mac/fs';
 export { FormatError, NotSupportedError } from './errors';
+export type { ErrorCode } from './errors';
 export { setWarningHandler } from './log';
 export type { WarningHandler } from './log';
+
+// Getting files out
+export { extract, extractItems, measure, safeFileName } from './fs/extract';
+export type { ExtractOptions, ExtractResult, ExtractProgress, ConflictPolicy, ConflictChoice } from './fs/extract';
+
+// Checking and describing backups
+export { verifySnapshot, verifyHeaders } from './verify';
+export type { VerifyOptions, VerifyResult, VerifyProgress, VerifyProblem } from './verify';
+export { describeArchive } from './info';
+export type { ArchiveDescription, SliceDescription, DescribeOptions } from './info';
+
+// Mounting
+export { WebDavServer } from './mount/webdav';
+export type { WebDavOptions } from './mount/webdav';
+export { RcloneMount, findRclone, findWinFsp, freeDriveLetters, normalizeDriveTarget } from './mount/rclone';
 
 /**
  * Opens a backup given any of its files (.tib or .tib.metadata). Files are only ever read.

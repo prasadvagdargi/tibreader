@@ -25,3 +25,28 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+
+  desktop-app:
+    name: Desktop app (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            gui/package-lock.json
+      - run: npm ci
+      # Compiles the test helpers the app's end-to-end tests use to make backups
+      - run: npm run pretest
+      - run: npm ci
+        working-directory: gui
+      # Electron downloads its binary on first use; do it up front (checks its checksum)
+      - run: node node_modules/electron/install.js
+        working-directory: gui
+      - run: npm run typecheck
+        working-directory: gui
+      - run: npm run test:e2e
+        working-directory: gui

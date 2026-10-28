@@ -1,0 +1,61 @@
+# Packaging for Windows: an installer, a single portable .exe and a zip (see doc/Plan-desktop-app.md).
+# Build with: npm run dist   (needs: npm run fetch-rclone)
+appId: io.github.prasadvagdargi.tibreader
+productName: TibReader
+copyright: Copyright © 2026 prasadvagdargi. MIT license.
+
+directories:
+  output: release
+  buildResources: build
+
+# The built app; the library's own dependencies (adler-32, xml2js) come from "dependencies"
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+
+# rclone (MIT) ships next to the app, outside the asar archive, so it can run
+extraResources:
+  - from: vendor/rclone
+    to: rclone
+    filter:
+      - rclone.exe
+      - LICENSE.txt
+  - from: ../LICENSE
+    to: LICENSE.txt
+
+asar: true
+
+win:
+  icon: build/icon.png
+  # The zip's name (the installer and portable exe set their own below)
+  artifactName: TibReader-${version}-win-${arch}.${ext}
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+
+# Double-clicking a .tib opens it in TibReader (installer only)
+fileAssociations:
+  - ext: tib
+    name: AcronisTrueImageBackup
+    description: Acronis True Image backup
+    role: Viewer
+
+nsis:
+  artifactName: TibReader-Setup-${version}.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+  shortcutName: TibReader
+  deleteAppDataOnUninstall: false
+
+portable:
+  artifactName: TibReader-${version}-portable.${ext}
+  # Unpacks to the same temp folder every time instead of a new one
+  unpackDirName: TibReader
