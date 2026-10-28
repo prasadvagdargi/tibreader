@@ -25,6 +25,15 @@ const bridge: TibBridge = {
 			ipcRenderer.off('app:event', handler);
 		};
 	},
+
+	pickFolder: (purpose) => ipcRenderer.invoke('files:pick-folder', purpose),
+	copyTo: (sessionId, jobId, slice, paths, dest, policy) => ipcRenderer.invoke('files:copy', sessionId, jobId, slice, paths, dest, policy),
+	openFile: (sessionId, jobId, slice, path) => ipcRenderer.invoke('files:open', sessionId, jobId, slice, path),
+	copyToClipboard: (sessionId, jobId, slice, paths) => ipcRenderer.invoke('files:clipboard', sessionId, jobId, slice, paths),
+	dragOut: (sessionId, slice, paths) => ipcRenderer.invoke('files:drag', sessionId, slice, paths),
+	openPath: (path) => ipcRenderer.invoke('files:open-path', path),
+	showInFolder: (path) => ipcRenderer.invoke('files:show-in-folder', path),
+	freeSpace: (folder) => ipcRenderer.invoke('files:free-space', folder),
 };
 
 contextBridge.exposeInMainWorld('tib', bridge);

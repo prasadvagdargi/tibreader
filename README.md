@@ -140,9 +140,14 @@ tib mount backup.tib --fuse ./mnt
 
 Desktop app (Windows, in progress)
 ----------------------------------
-`gui/` holds TibReader, a desktop app for people who'd rather not use a command line: open a backup
-(or drop it on the window), browse it like File Explorer, and see its backup points and details. Copying
-files out, mounting and packaged downloads are being added; see `doc/Plan-desktop-app.md`.
+`gui/` holds TibReader, a desktop app for people who'd rather not use a command line:
+- Open a backup (or drop it on the window) and browse it like File Explorer, at any backup point.
+- Copy to... a folder, Copy (Ctrl+C) and paste in Explorer, or drag files out.
+- Restore a whole drive or folder, with a choice of what happens to files that are already there.
+- Open a file (a read-only copy), or Edit a copy.
+
+The backup itself is never changed. Mounting as a drive letter and packaged downloads are being added;
+see `doc/Plan-desktop-app.md`.
 
 To run it from source (after `npm install` and `npm run pretest` in the repository root):
 ```bash

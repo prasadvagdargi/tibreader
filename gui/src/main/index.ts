@@ -3,8 +3,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EngineHost } from './engine-host';
+import { registerFileIpc } from './files';
 import { configureDataFolder, Settings } from './settings';
-import type { AppEvent, AppInfo, EngineMethod, Result, Session } from '../shared/api';
+import { cleanOldStaging } from './staging';
+import { WINDOW_METHODS, type AppEvent, type AppInfo, type EngineMethod, type Result, type Session } from '../shared/api';
 
 
 const portable = configureDataFolder();
@@ -28,8 +30,9 @@ const sessions = new Map<string, SessionEntry>();
 /** The backup each new window should open, by webContents id */
 const initialFiles = new Map<number, string>();
 let settings: Settings;
+let fileIpc: ReturnType<typeof registerFileIpc> | undefined;
 
-const ENGINE_METHODS = new Set<EngineMethod>(['open', 'list', 'stat', 'details', 'contents']);
+const ENGINE_METHODS = new Set<string>(WINDOW_METHODS);
 
 
 function start() {
@@ -69,6 +72,8 @@ function start() {
 		settings = new Settings();
 		Menu.setApplicationMenu(null);
 		registerIpc();
+		fileIpc = registerFileIpc(ownedSession, settings);
+		void cleanOldStaging();
 
 		let files = backupFilesIn(process.argv.slice(app.isPackaged ? 1 : 2), process.cwd());
 		if(files.length === 0) {
@@ -144,6 +149,7 @@ function createWindow(file?: string): BrowserWindow {
 
 	win.on('closed', () => {
 		initialFiles.delete(id);
+		fileIpc?.forget(id);
 		for(let [sid, s] of sessions) {
 			if(s.owner === id) {
 				void closeSession(sid);
@@ -199,6 +205,12 @@ async function openSession(owner: number, file: string): Promise<Result<Session>
 	host.onEvent = (ev) => {
 		if(ev.name === 'warning') {
 			sendEvent(owner, { name: 'warning', sessionId: id, message: ev.message });
+		}
+		else if(ev.name === 'job-progress') {
+			sendEvent(owner, { name: 'job-progress', sessionId: id, progress: ev.progress });
+		}
+		else if(ev.name === 'job-conflict') {
+			sendEvent(owner, { name: 'job-conflict', sessionId: id, conflict: ev.conflict });
 		}
 	};
 
@@ -293,7 +305,7 @@ function registerIpc() {
 		if(!s) {
 			return { ok: false, error: { code: 'engine', message: 'This backup is no longer open' } };
 		}
-		if(typeof method !== 'string' || !ENGINE_METHODS.has(method as EngineMethod) || method === 'open' || !Array.isArray(args)) {
+		if(typeof method !== 'string' || !ENGINE_METHODS.has(method) || !Array.isArray(args)) {
 			return { ok: false, error: { code: 'internal', message: 'Bad request' } };
 		}
 		return s.host.request(method as EngineMethod, args as any);

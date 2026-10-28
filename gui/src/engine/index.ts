@@ -5,12 +5,15 @@
  * The library decompresses and checks MD5s synchronously, and (once mounted) serves the backup's drive,
  * so it runs here instead of in the window or main process. Main sends requests over parentPort.
  */
+import fs from 'node:fs';
+import nodePath from 'node:path';
 import {
-	openArchive, describeArchive, measure, setWarningHandler, WindowsFS,
-	type Archive, type SnapshotFS, type FsEntry
+	openArchive, describeArchive, extractItems, measure, safeFileName, setWarningHandler, WindowsFS,
+	type Archive, type SnapshotFS, type FsEntry, type ConflictChoice as LibraryChoice
 } from 'tibreader';
 import type {
-	BackupInfo, Contents, EngineMessage, EngineMethods, EngineRequest, Entry, EntryDetails, ErrorInfo, Result
+	BackupInfo, ConflictChoice, ConflictPolicy, Contents, CopyResult, EngineMessage, EngineMethods, EngineRequest, Entry,
+	EntryDetails, ErrorInfo, Result
 } from '../shared/api';
 
 
@@ -45,6 +48,99 @@ function snapshot(slice: number): Promise<SnapshotFS> {
 		snapshots.set(n, s);
 	}
 	return s;
+}
+
+
+interface Job {
+	abort: AbortController;
+	/** Conflicts waiting for the user's answer */
+	pending: Map<number, (choice: ConflictChoice) => void>;
+	/** "Do this for all" answer */
+	always?: ConflictChoice;
+	nextConflict: number;
+}
+
+const jobs = new Map<string, Job>();
+
+/**
+ * Copies items out of the backup, reporting progress (at most ~10 times a second) and asking the
+ * window about files that already exist when the policy is 'ask'
+ */
+async function runCopy(jobId: string, slice: number, paths: string[], dest: string, policy: ConflictPolicy, readOnly: boolean): Promise<CopyResult> {
+	if(jobs.has(jobId)) {
+		throw new Error('Job ' + jobId + ' is already running');
+	}
+
+	let job: Job = { abort: new AbortController(), pending: new Map(), nextConflict: 1 };
+	jobs.set(jobId, job);
+
+	try {
+		let snap = await snapshot(slice);
+		let totals = await measure(snap, paths);
+		let wanted = new Set(paths);
+		let placed = new Map<string, string>();
+		let renamed = 0;
+		let last = 0;
+
+		let report = (files: number, bytes: number, path: string, force = false) => {
+			let now = Date.now();
+			if(!force && now - last < 100) {
+				return;
+			}
+			last = now;
+			send({ type: 'event', event: { name: 'job-progress', progress: {
+				jobId, files, bytes, totalFiles: totals.files, totalBytes: totals.bytes, path,
+			} } });
+		};
+
+		let ask = async (entry: FsEntry, destPath: string): Promise<LibraryChoice> => {
+			if(job.always) {
+				return job.always;
+			}
+			let conflictId = job.nextConflict++;
+			let existing = await fs.promises.stat(destPath).then((st) => ({ size: st.size, mtime: st.mtimeMs }), () => null);
+			return new Promise<LibraryChoice>((resolve) => {
+				job.pending.set(conflictId, resolve);
+				send({ type: 'event', event: { name: 'job-conflict', conflict: { jobId, conflictId, entry: toEntry(entry), dest: destPath, existing } } });
+			});
+		};
+
+		report(0, 0, paths[0] || '', true);
+
+		let r = await extractItems(snap, paths, dest, {
+			conflict: policy === 'ask' ? ask : policy,
+			signal: job.abort.signal,
+			onProgress: (p) => report(p.files, p.bytes, p.path),
+			onRenamed: () => { renamed++; },
+			onEntry: (e, d) => {
+				if(wanted.has(e.path) && !placed.has(e.path)) {
+					placed.set(e.path, d);
+				}
+			},
+		});
+
+		report(r.files, r.bytes, '', true);
+
+		let items = paths.map((p) => placed.get(p) ?? nodePath.join(dest, safeFileName(p.slice(p.lastIndexOf('/') + 1))));
+
+		// Copies opened just for viewing are read-only, so nobody edits them by mistake
+		if(readOnly) {
+			for(let f of items) {
+				let st = await fs.promises.stat(f).catch(() => null);
+				if(st && st.isFile()) {
+					await fs.promises.chmod(f, 0o444).catch(() => {});
+				}
+			}
+		}
+
+		return { files: r.files, folders: r.directories, bytes: r.bytes, skipped: r.skipped, renamed, items, destination: dest };
+	}
+	finally {
+		jobs.delete(jobId);
+		for(let resolve of job.pending.values()) {
+			resolve('abort');
+		}
+	}
 }
 
 
@@ -106,6 +202,44 @@ const handlers: Handlers = {
 		let m = await measure(await snapshot(slice));
 		return { files: m.files, folders: m.directories, bytes: m.bytes };
 	},
+
+	async measure(slice: number, paths: string[]): Promise<Contents> {
+		let m = await measure(await snapshot(slice), paths);
+		return { files: m.files, folders: m.directories, bytes: m.bytes };
+	},
+
+	async copy(jobId: string, slice: number, paths: string[], dest: string, policy: ConflictPolicy): Promise<CopyResult> {
+		return runCopy(jobId, slice, paths, dest, policy, false);
+	},
+
+	async stage(jobId: string, slice: number, paths: string[], dir: string, readOnly: boolean): Promise<CopyResult> {
+		await fs.promises.mkdir(dir, { recursive: true });
+		return runCopy(jobId, slice, paths, dir, 'rename', readOnly);
+	},
+
+	async cancel(jobId: string): Promise<void> {
+		let job = jobs.get(jobId);
+		if(job) {
+			job.abort.abort();
+			for(let resolve of job.pending.values()) {
+				resolve('abort');
+			}
+			job.pending.clear();
+		}
+	},
+
+	async answer(jobId: string, conflictId: number, choice: ConflictChoice, applyToAll: boolean): Promise<void> {
+		let job = jobs.get(jobId);
+		let resolve = job?.pending.get(conflictId);
+		if(!job || !resolve) {
+			return;
+		}
+		if(applyToAll && choice !== 'abort') {
+			job.always = choice;
+		}
+		job.pending.delete(conflictId);
+		resolve(choice);
+	},
 };
 
 
@@ -114,8 +248,14 @@ const LIBRARY_CODES = new Set(['not-a-backup', 'unexpected-name', 'missing-part'
 function toErrorInfo(e: any): ErrorInfo {
 	let message = e && e.message ? String(e.message) : String(e);
 
+	if(e && e.name === 'AbortError') {
+		return { code: 'cancelled', message: 'Stopped' };
+	}
 	if(e && (e.name === 'FormatError' || e.name === 'NotSupportedError') && LIBRARY_CODES.has(e.code)) {
 		return { code: e.code, message };
+	}
+	if(e && e.code === 'ENOSPC') {
+		return { code: 'no-space', message };
 	}
 	if(e && (e.code === 'not-found' || e.code === 'ENOENT' || /^File not found/.test(message))) {
 		return { code: 'not-found', message };

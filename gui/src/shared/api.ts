@@ -64,7 +64,7 @@ export interface Contents {
  */
 export type ErrorCode =
 	'not-a-backup' | 'unexpected-name' | 'missing-part' | 'damaged' | 'encrypted' | 'disk-image' | 'unsupported' |
-	'not-found' | 'io' | 'engine' | 'internal';
+	'not-found' | 'io' | 'no-space' | 'cancelled' | 'not-allowed' | 'engine' | 'internal';
 
 export interface ErrorInfo {
 	code: ErrorCode;
@@ -74,8 +74,25 @@ export interface ErrorInfo {
 export type Result<T> = { ok: true; value: T } | { ok: false; error: ErrorInfo };
 
 
+/** What to do when a file already exists at the destination */
+export type ConflictPolicy = 'ask' | 'overwrite' | 'skip' | 'rename';
+export type ConflictChoice = 'overwrite' | 'skip' | 'rename' | 'abort';
+
+export interface CopyResult {
+	files: number;
+	folders: number;
+	bytes: number;
+	skipped: number;
+	/** Names changed to be valid on Windows */
+	renamed: number;
+	/** Where each copied item ended up (same order as the paths asked for) */
+	items: string[];
+	destination: string;
+}
+
 /**
  * What the engine (one process per open backup) can do. Slice numbers are 1-based.
+ * Jobs (copy, stage) report progress as events and finish when the request returns.
  */
 export interface EngineMethods {
 	open(file: string): BackupInfo;
@@ -83,7 +100,17 @@ export interface EngineMethods {
 	stat(slice: number, path: string): Entry | null;
 	details(slice: number, path: string): EntryDetails | null;
 	contents(slice: number): Contents;
+	measure(slice: number, paths: string[]): Contents;
+	/** Copies items into a folder, each as dest/<name> (folders included) */
+	copy(jobId: string, slice: number, paths: string[], dest: string, policy: ConflictPolicy): CopyResult;
+	/** Copies items into a new private folder (for opening, the clipboard or dragging) */
+	stage(jobId: string, slice: number, paths: string[], dir: string, readOnly: boolean): CopyResult;
+	cancel(jobId: string): void;
+	answer(jobId: string, conflictId: number, choice: ConflictChoice, applyToAll: boolean): void;
 }
+
+/** The engine methods a window may call directly; the rest go through main, which picks destinations */
+export const WINDOW_METHODS = ['list', 'stat', 'details', 'contents', 'measure', 'cancel', 'answer'] as const;
 
 export type EngineMethod = keyof EngineMethods;
 export type EngineArgs<M extends EngineMethod> = Parameters<EngineMethods[M]>;
@@ -95,15 +122,39 @@ export type EngineMessage =
 	{ type: 'response'; id: number; result: Result<unknown> } |
 	{ type: 'event'; event: EngineEvent };
 
+export interface JobProgress {
+	jobId: string;
+	files: number;
+	bytes: number;
+	totalFiles: number;
+	totalBytes: number;
+	/** Backup path being copied */
+	path: string;
+}
+
+export interface JobConflict {
+	jobId: string;
+	conflictId: number;
+	/** In the backup */
+	entry: Entry;
+	/** The file that is already there */
+	dest: string;
+	existing: { size: number; mtime: number } | null;
+}
+
 export type EngineEvent =
-	{ name: 'warning'; message: string };
+	{ name: 'warning'; message: string } |
+	{ name: 'job-progress'; progress: JobProgress } |
+	{ name: 'job-conflict'; conflict: JobConflict };
 
 
 /** Events main sends to a window */
 export type AppEvent =
 	{ name: 'warning'; sessionId: string; message: string } |
 	{ name: 'session-lost'; sessionId: string; message: string } |
-	{ name: 'open-file'; file: string };
+	{ name: 'open-file'; file: string } |
+	{ name: 'job-progress'; sessionId: string; progress: JobProgress } |
+	{ name: 'job-conflict'; sessionId: string; conflict: JobConflict };
 
 
 export interface RecentBackup {
@@ -145,4 +196,20 @@ export interface TibBridge {
 	/** Matches the window buttons to the title bar */
 	setTitleBarColors(background: string, symbols: string): void;
 	onEvent(listener: (event: AppEvent) => void): () => void;
+
+	// Getting files out. Destinations must come from pickFolder.
+	/** Shows a folder dialog; null if cancelled */
+	pickFolder(purpose: 'copy' | 'restore' | 'edit'): Promise<string | null>;
+	copyTo(sessionId: string, jobId: string, slice: number, paths: string[], dest: string, policy: ConflictPolicy): Promise<Result<CopyResult>>;
+	/** Opens a read-only temporary copy with its usual app */
+	openFile(sessionId: string, jobId: string, slice: number, path: string): Promise<Result<void>>;
+	/** Puts temporary copies on the clipboard as files; returns how many */
+	copyToClipboard(sessionId: string, jobId: string, slice: number, paths: string[]): Promise<Result<number>>;
+	/** Starts dragging the items out of the window ('too-big' for large selections) */
+	dragOut(sessionId: string, slice: number, paths: string[]): Promise<Result<'started' | 'too-big'>>;
+	/** Opens a file or folder TibReader wrote */
+	openPath(path: string): Promise<Result<void>>;
+	showInFolder(path: string): Promise<void>;
+	/** Free bytes on the drive of a picked folder, or null if unknown */
+	freeSpace(folder: string): Promise<number | null>;
 }

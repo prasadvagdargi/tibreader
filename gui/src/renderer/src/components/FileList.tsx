@@ -166,6 +166,12 @@ export interface FileListProps {
 	/** Double-click or Enter */
 	onOpen: (entry: Entry) => void;
 	onUp: () => void;
+	/** Ctrl+C */
+	onCopy?: () => void;
+	/** Right-click on a row (already selected by then) or on empty space (entry null) */
+	onContextMenu?: (e: MouseEvent, entry: Entry | null) => void;
+	/** Rows dragged out of the window */
+	onDragOut?: (paths: string[]) => void;
 	/** Entry to focus when the list changes (e.g. the folder we came up from) */
 	focusPath?: string;
 	emptyText?: string;
@@ -289,6 +295,10 @@ export function FileList(p: FileListProps) {
 					p.onSelect(new Set(rows.map((r) => r.path)));
 					break;
 				}
+				if((e.key === 'c' || e.key === 'C') && e.ctrlKey && !e.shiftKey) {
+					p.onCopy?.();
+					break;
+				}
 				// Typing jumps to the next name that starts with what was typed
 				if(e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
 					let now = Date.now();
@@ -377,8 +387,15 @@ export function FileList(p: FileListProps) {
 				onBlur={() => setHasFocus(false)}
 				onMouseDown={(e) => {
 					// Clicking empty space clears the selection
-					if(e.target === e.currentTarget || (e.target as Element).getAttribute('data-body') === '1') {
+					if(e.button === 0 && (e.target === e.currentTarget || (e.target as Element).getAttribute('data-body') === '1')) {
 						p.onSelect(new Set());
+					}
+				}}
+				onContextMenu={(e) => {
+					if(e.target === e.currentTarget || (e.target as Element).getAttribute('data-body') === '1') {
+						e.preventDefault();
+						p.onSelect(new Set());
+						p.onContextMenu?.(e, null);
 					}
 				}}
 			>
@@ -411,8 +428,41 @@ export function FileList(p: FileListProps) {
 									isFocus && hasFocus && s.focused,
 								)}
 								style={{ transform: 'translateY(' + v.start + 'px)', gridTemplateColumns: columns }}
-								onMouseDown={(ev) => { if(ev.button === 0) { onRowClick(ev, v.index); } }}
+								draggable={!!p.onDragOut}
+								onMouseDown={(ev) => {
+									// A press on a selected row keeps the selection, so several rows can be dragged
+									if(ev.button === 0 && !(isSel && !ev.ctrlKey && !ev.shiftKey)) {
+										onRowClick(ev, v.index);
+									}
+								}}
+								onClick={(ev) => {
+									if(isSel && !ev.ctrlKey && !ev.shiftKey && p.selected.size > 1) {
+										onRowClick(ev, v.index);
+									}
+									else if(isSel) {
+										setFocus(e.path);
+										anchor.current = e.path;
+										scrollRef.current?.focus();
+									}
+								}}
 								onDoubleClick={() => p.onOpen(e)}
+								onContextMenu={(ev) => {
+									ev.preventDefault();
+									if(!isSel) {
+										onRowClick(ev, v.index);
+									}
+									setFocus(e.path);
+									p.onContextMenu?.(ev, e);
+								}}
+								onDragStart={(ev) => {
+									// Windows does the dragging; the browser's own drag is cancelled
+									ev.preventDefault();
+									let paths = isSel ? rows.filter((r) => p.selected.has(r.path)).map((r) => r.path) : [e.path];
+									if(!isSel) {
+										p.onSelect(new Set([e.path]));
+									}
+									p.onDragOut?.(paths);
+								}}
 							>
 								<div role="gridcell" className={mergeClasses(s.cell, s.nameCell)}>
 									{iconFor(e, p.format)}

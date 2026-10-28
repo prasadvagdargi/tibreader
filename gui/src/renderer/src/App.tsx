@@ -168,8 +168,11 @@ export function App() {
 		};
 	}, [openFile]);
 
+	// NOTE: no className on FluentProvider: Fluent copies it onto the layers that hold menus, tooltips
+	// and dialogs, and a height there makes an invisible sheet that covers the window and eats clicks
 	return (
-		<FluentProvider theme={theme} className={s.root}>
+		<FluentProvider theme={theme} style={{ height: '100%' }}>
+			<div className={s.root}>
 			{view.kind === 'welcome' && <Welcome onOpen={openFile} dragging={dragging} dropError={dropError} />}
 			{view.kind === 'opening' && (
 				<div className={s.opening}>
@@ -191,6 +194,7 @@ export function App() {
 			{view.kind === 'backup' && (
 				<BackupView session={view.session} onPickAnother={() => void pick()} onClose={() => void close()} />
 			)}
+			</div>
 		</FluentProvider>
 	);
 }

@@ -46,6 +46,8 @@ export function configureDataFolder(): boolean {
 
 interface StoredSettings {
 	recent: Array<{ file: string; name: string; lastOpened: number }>;
+	/** The folder last copied into, offered next time */
+	lastFolder?: string;
 }
 
 const MAX_RECENT = 12;
@@ -67,6 +69,9 @@ export class Settings {
 				this._data.recent = parsed.recent.filter((r: any) =>
 					r && typeof r.file === 'string' && typeof r.name === 'string' && typeof r.lastOpened === 'number');
 			}
+			if(parsed && typeof parsed.lastFolder === 'string') {
+				this._data.lastFolder = parsed.lastFolder;
+			}
 		}
 		catch(e) {
 			// First start, or an unreadable file: start fresh
@@ -86,6 +91,15 @@ export class Settings {
 			{ file, name, lastOpened: Date.now() },
 			...this._data.recent.filter((r) => r.file.toLowerCase() !== key),
 		].slice(0, MAX_RECENT);
+		this.save();
+	}
+
+	get lastFolder(): string | undefined {
+		return this._data.lastFolder;
+	}
+
+	set lastFolder(folder: string | undefined) {
+		this._data.lastFolder = folder;
 		this.save();
 	}
 

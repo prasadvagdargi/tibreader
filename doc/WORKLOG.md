@@ -191,3 +191,44 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    It browses, selects, goes Up, opens Info, and shows the encrypted-backup error.
    - Screenshots land in `gui/test-results/`.
    - CI gets a Windows job for the app (typecheck + e2e).
+
+
+2026-10-28: desktop app, M3 (getting files out)
+-----------------------------------------------
+1. Engine jobs (`copy`, `stage`):
+   - built on `extractItems`, with progress events (at most ~10 a second), cancel, and "file already
+     there" questions sent to the window. "Do this for all" is remembered per job.
+   - Errors come back as `cancelled` / `no-space` / `io` codes.
+2. Main (`gui/src/main/files.ts`):
+   - A window can only copy into folders picked in a folder dialog (an approved list per window).
+   - Temporary copies go to `%TEMP%\TibReader\staging\<random>` and are removed after a day, on a later
+     start: Explorer may still paste them, so they can't go when the backup closes.
+   - Open uses a read-only temporary copy.
+   - Ctrl+C: a fixed PowerShell 5.1 script sets a multi-file CF_HDROP. Paths go in as base64 JSON on
+     stdin, so non-English names survive and names never become code; a name containing `$(whoami)`
+     was tested and stayed text.
+   - Dragging stages the selection, then calls `webContents.startDrag` with the real shell icon; more
+     than 200 MB gets "use Copy to" instead.
+3. UI:
+   - Command bar: Copy to / Copy / Open / Edit a copy / Restore.
+   - A right-click menu; Ctrl+C; rows can be dragged.
+   - A jobs button in the status bar with progress, speed, time left and Cancel.
+   - A conflict dialog (Replace / Keep both / Skip / Stop, "for all").
+   - A Restore dialog: what, how big, where, free space, what to do with existing files.
+   - Toasts with "Show" in folder.
+   - A clipboard copy over 2 GB offers Copy to instead.
+4. Bug found by the tests: a `className` on `FluentProvider` is copied onto Fluent's portal layers, so
+   `height: 100%` there made an invisible sheet over the window that swallowed every click. The
+   provider now only gets `style`, and the layout lives in a child div.
+5. e2e (9 tests) stub the main process's `dialog.showOpenDialog`, `shell.openPath` and
+   `webContents.startDrag` through `app.evaluate`, with no test hooks in the app. They check:
+   - copied bytes and dates
+   - Keep both
+   - Restore
+   - read-only Open vs writable Edit a copy
+   - the real Windows clipboard (Ctrl+C test; it overwrites the clipboard while it runs)
+   - what a drag hands to Windows
+
+   Not automated: the OS drag-and-drop itself (Windows' modal drag loop) needs a manual check.
+6. Gotcha while editing: PowerShell 5.1's `Get-Content` reads UTF-8 files as ANSI by default; a
+   scripted replace turned "Café" into "CafÃ©". Edit files with the editor tools, or pass `-Encoding UTF8`.
