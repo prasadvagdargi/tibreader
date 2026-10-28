@@ -145,7 +145,7 @@ Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
       browse (tree, list, breadcrumb, backup point picker), Info panel, friendly errors
 - [x] M3 getting files out: Copy to / Restore wizard, jobs flyout with cancel and conflicts, Open, Edit a copy,
       staging, Ctrl+C clipboard (PowerShell `Set-Clipboard -LiteralPath`, paths on stdin), drag-out
-- [ ] M4 mount: bundled rclone, WinFsp detection and install, drive letter picker, mounted paths for
+- [x] M4 mount: bundled rclone, WinFsp detection and install, drive letter picker, mounted paths for
       clipboard/drag/open, clean unmount on quit or crash
 - [ ] M5 polish: preview pane, search, Verify dialog, properties with attributes, shortcuts, Settings, recent files
 - [ ] M6 packaging: portable exe, zip, NSIS installer with `.tib` association; single instance; portable data

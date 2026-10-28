@@ -20,9 +20,8 @@ export function tempDir(): string {
 	return fs.mkdtempSync(path.join(os.tmpdir(), 'tibreader-e2e-'));
 }
 
-/** Starts the built app with its own settings folder, opening the given backup files */
-export async function launch(files: string[] = []): Promise<{ app: ElectronApplication; win: Page; userData: string }> {
-	let userData = tempDir();
+/** Starts the built app with its own settings folder (or the one given), opening the given backup files */
+export async function launch(files: string[] = [], userData = tempDir()): Promise<{ app: ElectronApplication; win: Page; userData: string }> {
 	let app = await electron.launch({
 		// The app folder (not the script) so Electron reads package.json: name, version, main
 		args: [path.resolve(__dirname, '../..'), ...files],

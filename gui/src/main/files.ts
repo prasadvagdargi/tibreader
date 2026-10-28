@@ -6,7 +6,7 @@ import type { EngineHost } from './engine-host';
 import type { Settings } from './settings';
 import { setClipboardFiles } from './clipboard';
 import { isInside, isInStaging, newStagingDir } from './staging';
-import type { ConflictPolicy, CopyResult, Result } from '../shared/api';
+import type { ConflictPolicy, CopyResult, MountInfo, Result } from '../shared/api';
 
 
 /** Dragging needs the files ready before the mouse button is let go, so big selections use Copy to... */
@@ -14,7 +14,28 @@ const DRAG_LIMIT = 200 * 1024 * 1024;
 
 const POLICIES = new Set<ConflictPolicy>(['ask', 'overwrite', 'skip', 'rename']);
 
-type SessionLookup = (e: IpcMainInvokeEvent, id: unknown) => { host: EngineHost } | undefined;
+type SessionLookup = (e: IpcMainInvokeEvent, id: unknown) => { host: EngineHost; mounted?: MountInfo } | undefined;
+/** Drive letters (like "R:") of the backups a window has mounted */
+type LettersOf = (webContentsId: number) => string[];
+
+/**
+ * Where items are on the mounted drive, when this backup point is mounted. Null if it isn't, or if a
+ * name wouldn't work on Windows (then a temporary copy, with a fixed-up name, is used instead).
+ */
+function onDrive(mounted: MountInfo | undefined, slice: number, paths: string[]): string[] | null {
+	if(!mounted || mounted.slice !== slice) {
+		return null;
+	}
+	let out: string[] = [];
+	for(let p of paths) {
+		let parts = p.split('/').filter((x) => x.length > 0);
+		if(parts.some((x) => /[<>:"\\|?*\u0000-\u001f]/.test(x) || /[. ]$/.test(x))) {
+			return null;
+		}
+		out.push(mounted.letter + '\\' + parts.join('\\'));
+	}
+	return out;
+}
 
 const isString = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
 const isPaths = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((p) => typeof p === 'string' && p.startsWith('/'));
@@ -29,12 +50,16 @@ function fail<T>(code: 'not-allowed' | 'internal' | 'io' | 'engine', message: st
  * Everything that writes files or talks to Windows on a window's behalf. A window can only copy into
  * folders the user picked in a folder dialog, so a misbehaving page can't write anywhere else.
  */
-export function registerFileIpc(lookup: SessionLookup, settings: Settings) {
+export function registerFileIpc(lookup: SessionLookup, settings: Settings, lettersOf: LettersOf) {
 	/** Folders picked in dialogs, by webContents id */
 	let approved = new Map<number, string[]>();
 
 	let isApproved = (e: IpcMainInvokeEvent, p: string) =>
 		(approved.get(e.sender.id) || []).some((folder) => isInside(p, folder));
+
+	/** Somewhere TibReader put files for this window: a picked folder, a temporary copy, or its mounted drive */
+	let isOurs = (e: IpcMainInvokeEvent, p: string) =>
+		isApproved(e, p) || isInStaging(p) || lettersOf(e.sender.id).some((l) => isInside(p, l + '\\'));
 
 	let stage = async (host: EngineHost, jobId: string, slice: number, paths: string[], readOnly: boolean): Promise<Result<CopyResult>> =>
 		host.request('stage', [jobId, slice, paths, newStagingDir(), readOnly]);
@@ -90,11 +115,16 @@ export function registerFileIpc(lookup: SessionLookup, settings: Settings) {
 			return fail('internal', 'Bad request');
 		}
 
-		let r = await stage(s.host, jobId, slice, [p as string], true);
-		if(!r.ok) {
-			return r;
+		// Mounted: open it straight from the (read-only) drive
+		let file = onDrive(s.mounted, slice, [p as string])?.[0];
+		if(!file) {
+			let r = await stage(s.host, jobId, slice, [p as string], true);
+			if(!r.ok) {
+				return r;
+			}
+			file = r.value.items[0];
 		}
-		let problem = await shell.openPath(r.value.items[0]);
+		let problem = await shell.openPath(file);
 		return problem ? fail('io', problem) : { ok: true, value: undefined };
 	});
 
@@ -108,13 +138,18 @@ export function registerFileIpc(lookup: SessionLookup, settings: Settings) {
 			return fail('internal', 'Bad request');
 		}
 
-		let r = await stage(s.host, jobId, slice, paths, false);
-		if(!r.ok) {
-			return r;
+		// Mounted: Explorer pastes straight from the drive, with nothing copied first
+		let files = onDrive(s.mounted, slice, paths);
+		if(!files) {
+			let r = await stage(s.host, jobId, slice, paths, false);
+			if(!r.ok) {
+				return r;
+			}
+			files = r.value.items;
 		}
 		try {
-			await setClipboardFiles(r.value.items);
-			return { ok: true, value: r.value.items.length };
+			await setClipboardFiles(files);
+			return { ok: true, value: files.length };
 		}
 		catch(err: any) {
 			return fail('io', err.message);
@@ -131,20 +166,24 @@ export function registerFileIpc(lookup: SessionLookup, settings: Settings) {
 			return fail('internal', 'Bad request');
 		}
 
-		let size = await s.host.request('measure', [slice, paths]);
-		if(!size.ok) {
-			return size;
-		}
-		if(size.value.bytes > DRAG_LIMIT) {
-			return { ok: true, value: 'too-big' };
+		// Mounted: any size can be dragged, since the files are already there
+		let files = onDrive(s.mounted, slice, paths);
+		if(!files) {
+			let size = await s.host.request('measure', [slice, paths]);
+			if(!size.ok) {
+				return size;
+			}
+			if(size.value.bytes > DRAG_LIMIT) {
+				return { ok: true, value: 'too-big' };
+			}
+
+			let r = await stage(s.host, crypto.randomUUID(), slice, paths, false);
+			if(!r.ok) {
+				return r;
+			}
+			files = r.value.items;
 		}
 
-		let r = await stage(s.host, crypto.randomUUID(), slice, paths, false);
-		if(!r.ok) {
-			return r;
-		}
-
-		let files = r.value.items;
 		let icon = await app.getFileIcon(files[0], { size: 'normal' });
 		e.sender.startDrag({ file: files[0], files, icon });
 		return { ok: true, value: 'started' };
@@ -152,7 +191,7 @@ export function registerFileIpc(lookup: SessionLookup, settings: Settings) {
 
 	// Opening something TibReader wrote: a copy being edited, or a destination folder
 	ipcMain.handle('files:open-path', async (e, p: unknown): Promise<Result<void>> => {
-		if(!isString(p) || !(isApproved(e, p) || isInStaging(p))) {
+		if(!isString(p) || !isOurs(e, p)) {
 			return fail('not-allowed', 'Not a file TibReader copied');
 		}
 		let problem = await shell.openPath(p);
@@ -160,9 +199,20 @@ export function registerFileIpc(lookup: SessionLookup, settings: Settings) {
 	});
 
 	ipcMain.handle('files:show-in-folder', (e, p: unknown) => {
-		if(isString(p) && (isApproved(e, p) || isInStaging(p))) {
+		if(isString(p) && isOurs(e, p)) {
 			shell.showItemInFolder(path.normalize(p));
 		}
+	});
+
+	// "Show in mounted drive": File Explorer, on the drive letter, with the item selected
+	ipcMain.handle('files:show-on-drive', (e, sid: unknown, slice: unknown, p: unknown): Result<void> => {
+		let s = lookup(e, sid);
+		let file = s && isSlice(slice) && isPaths([p]) ? onDrive(s.mounted, slice, [p as string])?.[0] : undefined;
+		if(!file) {
+			return fail('not-allowed', 'This backup point isn\'t mounted');
+		}
+		shell.showItemInFolder(file);
+		return { ok: true, value: undefined };
 	});
 
 	ipcMain.handle('files:free-space', async (e, folder: unknown): Promise<number | null> => {

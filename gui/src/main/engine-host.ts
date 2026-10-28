@@ -72,7 +72,7 @@ export class EngineHost {
 		});
 	}
 
-	/** Asks the engine to close the backup and exit; ends it after a few seconds if it doesn't */
+	/** Asks the engine to unmount, close the backup and exit; ends it after a few seconds if it doesn't */
 	async shutdown(): Promise<void> {
 		if(this._exited) {
 			return;
@@ -88,7 +88,7 @@ export class EngineHost {
 				timer = setTimeout(() => {
 					this._child.kill();
 					resolve();
-				}, 3000);
+				}, 8000);
 			}),
 		]);
 		clearTimeout(timer);

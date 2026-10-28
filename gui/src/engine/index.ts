@@ -8,12 +8,13 @@
 import fs from 'node:fs';
 import nodePath from 'node:path';
 import {
-	openArchive, describeArchive, extractItems, measure, safeFileName, setWarningHandler, WindowsFS,
+	openArchive, describeArchive, extractItems, findRclone, findWinFsp, freeDriveLetters, measure, RcloneMount, safeFileName,
+	setWarningHandler, WebDavServer, WindowsFS,
 	type Archive, type SnapshotFS, type FsEntry, type ConflictChoice as LibraryChoice
 } from 'tibreader';
 import type {
 	BackupInfo, ConflictChoice, ConflictPolicy, Contents, CopyResult, EngineMessage, EngineMethods, EngineRequest, Entry,
-	EntryDetails, ErrorInfo, Result
+	EntryDetails, ErrorInfo, MountInfo, MountStatus, Result
 } from '../shared/api';
 
 
@@ -48,6 +49,35 @@ function snapshot(slice: number): Promise<SnapshotFS> {
 		snapshots.set(n, s);
 	}
 	return s;
+}
+
+
+/**
+ * Read-only WebDAV servers on 127.0.0.1, one per backup point that needs one (the drive letter, and
+ * later previews). Each serves below a random path and checks the Host header (see the library).
+ */
+const servers = new Map<number, Promise<{ server: WebDavServer; url: string }>>();
+
+function serverFor(slice: number): Promise<{ server: WebDavServer; url: string }> {
+	let s = servers.get(slice);
+	if(!s) {
+		s = (async () => {
+			let server = new WebDavServer(await snapshot(slice), { basePath: WebDavServer.randomBasePath() });
+			let addr = await server.listen(0, '127.0.0.1');
+			return { server, url: 'http://127.0.0.1:' + addr.port + server.basePath };
+		})();
+		s.catch(() => servers.delete(slice));
+		servers.set(slice, s);
+	}
+	return s;
+}
+
+let mounted: { mount: RcloneMount; info: MountInfo } | null = null;
+
+/** Windows volume labels are short; Explorer shows this next to the letter */
+function volumeLabel(): string {
+	let name = (archive?.name || 'Backup').replace(/[^\w .-]/g, '').trim() || 'Backup';
+	return name.slice(0, 32);
 }
 
 
@@ -240,6 +270,46 @@ const handlers: Handlers = {
 		job.pending.delete(conflictId);
 		resolve(choice);
 	},
+
+	async mountStatus(): Promise<MountStatus> {
+		let [winfsp, freeLetters] = await Promise.all([findWinFsp(), freeDriveLetters()]);
+		return { rclone: findRclone() !== null, winfsp: winfsp !== null, freeLetters, mounted: mounted ? mounted.info : null };
+	},
+
+	async mount(slice: number, letter: string): Promise<MountInfo> {
+		if(mounted) {
+			throw new Error('This backup is already mounted as ' + mounted.info.letter);
+		}
+		if(!/^[D-Z]:$/.test(letter)) {
+			throw new Error('Not a drive letter: ' + letter);
+		}
+
+		let { url } = await serverFor(slice);
+		let mount = new RcloneMount(url, letter, volumeLabel());
+		let info = { letter, slice };
+
+		mount.onUnexpectedExit = (stderr) => {
+			if(mounted && mounted.mount === mount) {
+				mounted = null;
+				send({ type: 'event', event: { name: 'mount-changed', mounted: null, lost: stderr || 'rclone stopped' } });
+			}
+		};
+
+		await mount.mount();
+		mounted = { mount, info };
+		send({ type: 'event', event: { name: 'mount-changed', mounted: info, pid: mount.pid, exe: findRclone() || undefined } });
+		return info;
+	},
+
+	async unmount(): Promise<void> {
+		let m = mounted;
+		if(!m) {
+			return;
+		}
+		mounted = null;
+		await m.mount.unmount();
+		send({ type: 'event', event: { name: 'mount-changed', mounted: null } });
+	},
 };
 
 
@@ -286,6 +356,11 @@ setWarningHandler((message) => send({ type: 'event', event: { name: 'warning', m
 
 async function shutdown() {
 	try {
+		// The drive first: it reads through the servers, which read the backup
+		await handlers.unmount().catch(() => {});
+		for(let s of servers.values()) {
+			await s.then((x) => x.server.close(), () => {});
+		}
 		if(archive) {
 			await archive.close();
 		}
@@ -293,6 +368,21 @@ async function shutdown() {
 	finally {
 		process.exit(0);
 	}
+}
+
+// If TibReader itself is ended forcibly (Task Manager), this process can linger for a while and keep
+// the drive letter alive. Check that main is still there, and clean up promptly when it isn't.
+let mainPid = Number(process.env.TIBREADER_MAIN_PID);
+if(mainPid > 0) {
+	setInterval(() => {
+		try {
+			// Signal 0 only checks that the process exists
+			process.kill(mainPid, 0);
+		}
+		catch(e) {
+			void shutdown();
+		}
+	}, 2000).unref();
 }
 
 port.on('message', (e) => {

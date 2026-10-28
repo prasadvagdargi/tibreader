@@ -107,10 +107,30 @@ export interface EngineMethods {
 	stage(jobId: string, slice: number, paths: string[], dir: string, readOnly: boolean): CopyResult;
 	cancel(jobId: string): void;
 	answer(jobId: string, conflictId: number, choice: ConflictChoice, applyToAll: boolean): void;
+	/** What mounting needs, and what is mounted */
+	mountStatus(): MountStatus;
+	/** Shows one backup point as a read-only drive letter (e.g. "R:") */
+	mount(slice: number, letter: string): MountInfo;
+	unmount(): void;
+}
+
+export interface MountInfo {
+	letter: string;
+	slice: number;
+}
+
+export interface MountStatus {
+	/** rclone is bundled or installed */
+	rclone: boolean;
+	/** WinFsp (the driver rclone needs on Windows) is installed */
+	winfsp: boolean;
+	/** Unused letters, Z: first */
+	freeLetters: string[];
+	mounted: MountInfo | null;
 }
 
 /** The engine methods a window may call directly; the rest go through main, which picks destinations */
-export const WINDOW_METHODS = ['list', 'stat', 'details', 'contents', 'measure', 'cancel', 'answer'] as const;
+export const WINDOW_METHODS = ['list', 'stat', 'details', 'contents', 'measure', 'cancel', 'answer', 'mountStatus', 'mount', 'unmount'] as const;
 
 export type EngineMethod = keyof EngineMethods;
 export type EngineArgs<M extends EngineMethod> = Parameters<EngineMethods[M]>;
@@ -145,7 +165,9 @@ export interface JobConflict {
 export type EngineEvent =
 	{ name: 'warning'; message: string } |
 	{ name: 'job-progress'; progress: JobProgress } |
-	{ name: 'job-conflict'; conflict: JobConflict };
+	{ name: 'job-conflict'; conflict: JobConflict } |
+	/** pid/exe: the rclone process serving the drive, so main can end it if the engine crashes */
+	{ name: 'mount-changed'; mounted: MountInfo | null; pid?: number; exe?: string; lost?: string };
 
 
 /** Events main sends to a window */
@@ -154,7 +176,9 @@ export type AppEvent =
 	{ name: 'session-lost'; sessionId: string; message: string } |
 	{ name: 'open-file'; file: string } |
 	{ name: 'job-progress'; sessionId: string; progress: JobProgress } |
-	{ name: 'job-conflict'; sessionId: string; conflict: JobConflict };
+	{ name: 'job-conflict'; sessionId: string; conflict: JobConflict } |
+	/** lost: why the drive went away by itself */
+	{ name: 'mount-changed'; sessionId: string; mounted: MountInfo | null; lost?: string };
 
 
 export interface RecentBackup {
@@ -212,4 +236,12 @@ export interface TibBridge {
 	showInFolder(path: string): Promise<void>;
 	/** Free bytes on the drive of a picked folder, or null if unknown */
 	freeSpace(folder: string): Promise<number | null>;
+
+	// Mounting
+	/** Installs WinFsp with winget (Windows asks for permission), or opens its website if winget is missing */
+	installWinFsp(): Promise<Result<'installed' | 'website'>>;
+	/** Opens the backup's mounted drive in File Explorer */
+	openDrive(sessionId: string): Promise<Result<void>>;
+	/** Shows an item on the mounted drive in File Explorer */
+	showOnDrive(sessionId: string, slice: number, path: string): Promise<Result<void>>;
 }

@@ -34,6 +34,10 @@ const bridge: TibBridge = {
 	openPath: (path) => ipcRenderer.invoke('files:open-path', path),
 	showInFolder: (path) => ipcRenderer.invoke('files:show-in-folder', path),
 	freeSpace: (folder) => ipcRenderer.invoke('files:free-space', folder),
+
+	installWinFsp: () => ipcRenderer.invoke('mount:install-winfsp'),
+	openDrive: (sessionId) => ipcRenderer.invoke('mount:open-drive', sessionId),
+	showOnDrive: (sessionId, slice, path) => ipcRenderer.invoke('files:show-on-drive', sessionId, slice, path),
 };
 
 contextBridge.exposeInMainWorld('tib', bridge);

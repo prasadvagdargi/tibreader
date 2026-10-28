@@ -2,14 +2,15 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import {
 	Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, Button, Caption1, Dialog, DialogActions, DialogBody,
 	DialogContent, DialogSurface, DialogTitle, Dropdown, Link, makeStyles, Menu, MenuDivider, MenuItem, MenuList, MenuPopover,
-	MessageBar, MessageBarBody, Option, Toast, Toaster, ToastBody, ToastTitle, Toolbar, ToolbarButton, ToolbarDivider, tokens,
-	Tooltip, useId, useToastController, type ToastIntent,
+	MenuTrigger, MessageBar, MessageBarBody, Option, Toast, Toaster, ToastBody, ToastTitle, Toolbar, ToolbarButton, ToolbarDivider,
+	tokens, Tooltip, useId, useToastController, type ToastIntent,
 } from '@fluentui/react-components';
 import {
-	Archive16Regular, ArrowCounterclockwise20Regular, ArrowLeft20Regular, ArrowRight20Regular, ArrowUp20Regular, Copy20Regular,
-	Dismiss20Regular, Edit20Regular, FolderArrowRight20Regular, FolderOpen20Regular, Info20Regular, Open20Regular,
+	Archive16Regular, ArrowCounterclockwise20Regular, ArrowLeft20Regular, ArrowRight20Regular, ArrowUp20Regular, ChevronDown16Regular,
+	Copy20Regular, Dismiss20Regular, Edit20Regular, FolderArrowRight20Regular, FolderOpen20Regular, HardDrive20Regular,
+	Info20Regular, Open20Regular, PlugDisconnected20Regular,
 } from '@fluentui/react-icons';
-import type { ConflictPolicy, Entry, Session } from '../../../shared/api';
+import type { ConflictPolicy, Entry, MountInfo, Session } from '../../../shared/api';
 import { call, errorCode, errorMessage, tib } from '../api';
 import { friendlyError } from '../errors';
 import { displayName, driveLabel } from '../fileTypes';
@@ -20,6 +21,7 @@ import { FileList } from './FileList';
 import { ancestors, FolderTree } from './FolderTree';
 import { InfoPanel } from './InfoPanel';
 import { JobsButton } from './JobsButton';
+import { MountDialog } from './MountDialog';
 import { RestoreDialog } from './RestoreDialog';
 import { TitleBar } from './TitleBar';
 
@@ -137,6 +139,8 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 	let [menu, setMenu] = useState<{ x: number; y: number; entry: Entry | null } | null>(null);
 	let [restoreSource, setRestoreSource] = useState<Entry | null>(null);
 	let [bigClipboard, setBigClipboard] = useState<{ paths: string[]; bytes: number } | null>(null);
+	let [mounted, setMounted] = useState<MountInfo | null>(null);
+	let [mountOpen, setMountOpen] = useState(false);
 	let loadSeq = useRef(0);
 	let crumbsRef = useRef<HTMLDivElement>(null);
 
@@ -187,6 +191,16 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 			}
 		);
 	}, [sid, slice, path]);
+
+	// The drive letter can also go away by itself (rclone stopped)
+	useEffect(() => tib.onEvent((ev) => {
+		if(ev.name === 'mount-changed' && ev.sessionId === sid) {
+			setMounted(ev.mounted);
+			if(ev.lost) {
+				notify('warning', 'The backup\'s drive went away', ev.lost);
+			}
+		}
+	}), [sid, notify]);
 
 	// Keep the end of a long path visible
 	useEffect(() => {
@@ -386,6 +400,34 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 		}
 	};
 
+	let openDrive = async () => {
+		let r = await tib.openDrive(sid);
+		if(!r.ok) {
+			notify('error', 'The drive couldn\'t be opened', r.error.message);
+		}
+	};
+
+	let unmount = async () => {
+		try {
+			await call(sid, 'unmount');
+			setMounted(null);
+		}
+		catch(e) {
+			notifyError(e);
+		}
+	};
+
+	let onMounted = (m: MountInfo) => {
+		setMountOpen(false);
+		setMounted(m);
+		notify('success', 'Mounted as ' + m.letter,
+			'Copying, dragging and opening now come straight from the drive.',
+			{ label: 'Open', run: () => void openDrive() });
+	};
+
+	/** The drive shows this backup point (copies of other points still work, through temporary files) */
+	let mountedHere = mounted !== null && mounted.slice === slice;
+
 	/** What Restore offers by default: the selected folder, or the folder being shown */
 	let restoreTarget = (): Entry => {
 		if(single && single.type === 'directory') {
@@ -483,6 +525,25 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 					</ToolbarButton>
 					<ToolbarDivider />
 					<ToolbarButton icon={<ArrowCounterclockwise20Regular />} onClick={() => setRestoreSource(restoreTarget())}>Restore...</ToolbarButton>
+					{mounted
+						? (
+							<Menu>
+								<MenuTrigger disableButtonEnhancement>
+									<Tooltip content={'Shows backup point ' + mounted.slice + ' of ' + info.slices.length} relationship="description">
+										<ToolbarButton icon={<HardDrive20Regular />}>
+											Drive {mounted.letter} <ChevronDown16Regular />
+										</ToolbarButton>
+									</Tooltip>
+								</MenuTrigger>
+								<MenuPopover>
+									<MenuList>
+										<MenuItem icon={<FolderOpen20Regular />} onClick={() => void openDrive()}>Open in File Explorer</MenuItem>
+										<MenuItem icon={<PlugDisconnected20Regular />} onClick={() => void unmount()}>Unmount</MenuItem>
+									</MenuList>
+								</MenuPopover>
+							</Menu>
+						)
+						: <ToolbarButton icon={<HardDrive20Regular />} onClick={() => setMountOpen(true)}>Mount as drive...</ToolbarButton>}
 					<span className={s.spacer} />
 					<ToolbarButton icon={<Info20Regular />} onClick={() => setInfoOpen(true)}>Backup info</ToolbarButton>
 					<Tooltip content="Open another backup (Ctrl+O)" relationship="label">
@@ -588,6 +649,14 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 							{menu.entry.type === 'directory' && (
 								<MenuItem icon={<ArrowCounterclockwise20Regular />} onClick={() => setRestoreSource(menu.entry)}>Restore...</MenuItem>
 							)}
+							{mountedHere && (
+								<>
+									<MenuDivider />
+									<MenuItem icon={<HardDrive20Regular />} onClick={() => void tib.showOnDrive(sid, slice, menu.entry!.path)}>
+										Show in drive {mounted!.letter}
+									</MenuItem>
+								</>
+							)}
 						</MenuList>
 					)}
 					{menu && !menu.entry && (
@@ -638,6 +707,17 @@ export function BackupView(props: { session: Session; onPickAnother: () => void;
 					</DialogBody>
 				</DialogSurface>
 			</Dialog>
+
+			{mountOpen && (
+				<MountDialog
+					open
+					sessionId={sid}
+					slice={slice}
+					sliceCreated={point.created}
+					onClose={() => setMountOpen(false)}
+					onMounted={onMounted}
+				/>
+			)}
 
 			<InfoPanel open={infoOpen} onClose={() => setInfoOpen(false)} session={session} slice={slice} />
 			<Toaster toasterId={toasterId} position="bottom-end" offset={{ vertical: 40 }} />

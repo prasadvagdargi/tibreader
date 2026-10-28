@@ -1,12 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EngineHost } from './engine-host';
 import { registerFileIpc } from './files';
+import { cleanStaleMounts, endIfOurRclone, forgetMount, installWinFsp, recordMount } from './mounts';
 import { configureDataFolder, Settings } from './settings';
 import { cleanOldStaging } from './staging';
-import { WINDOW_METHODS, type AppEvent, type AppInfo, type EngineMethod, type Result, type Session } from '../shared/api';
+import { WINDOW_METHODS, type AppEvent, type AppInfo, type EngineMethod, type MountInfo, type Result, type Session } from '../shared/api';
 
 
 const portable = configureDataFolder();
@@ -20,10 +21,14 @@ else {
 }
 
 
-interface SessionEntry {
+export interface SessionEntry {
 	host: EngineHost;
 	/** webContents id of the window that opened it */
 	owner: number;
+	/** The drive letter showing this backup, if any */
+	mounted?: MountInfo;
+	/** The rclone process serving it */
+	rclone?: { pid: number; exe: string };
 }
 
 const sessions = new Map<string, SessionEntry>();
@@ -72,8 +77,10 @@ function start() {
 		settings = new Settings();
 		Menu.setApplicationMenu(null);
 		registerIpc();
-		fileIpc = registerFileIpc(ownedSession, settings);
+		fileIpc = registerFileIpc(ownedSession, settings, (owner) =>
+			[...sessions.values()].filter((s) => s.owner === owner && s.mounted).map((s) => s.mounted!.letter));
 		void cleanOldStaging();
+		void cleanStaleMounts();
 
 		let files = backupFilesIn(process.argv.slice(app.isPackaged ? 1 : 2), process.cwd());
 		if(files.length === 0) {
@@ -186,7 +193,7 @@ function sendEvent(ownerId: number, event: AppEvent) {
 }
 
 function engineEnv(): NodeJS.ProcessEnv {
-	let env = { ...process.env };
+	let env: NodeJS.ProcessEnv = { ...process.env, TIBREADER_MAIN_PID: String(process.pid) };
 
 	// Prefer the rclone that ships with the app (see electron-builder.yml); fall back to an installed one
 	let bundled = app.isPackaged
@@ -212,6 +219,21 @@ async function openSession(owner: number, file: string): Promise<Result<Session>
 		else if(ev.name === 'job-conflict') {
 			sendEvent(owner, { name: 'job-conflict', sessionId: id, conflict: ev.conflict });
 		}
+		else if(ev.name === 'mount-changed') {
+			let s = sessions.get(id);
+			if(s) {
+				s.mounted = ev.mounted ?? undefined;
+				if(ev.mounted && ev.pid && ev.exe) {
+					s.rclone = { pid: ev.pid, exe: ev.exe };
+					recordMount(ev.pid, ev.exe);
+				}
+				else if(!ev.mounted && s.rclone) {
+					forgetMount(s.rclone.pid);
+					s.rclone = undefined;
+				}
+			}
+			sendEvent(owner, { name: 'mount-changed', sessionId: id, mounted: ev.mounted, lost: ev.lost });
+		}
 	};
 
 	let result = await host.request('open', [file]);
@@ -221,7 +243,12 @@ async function openSession(owner: number, file: string): Promise<Result<Session>
 	}
 
 	host.onCrash = (code) => {
+		let s = sessions.get(id);
 		sessions.delete(id);
+		// rclone outlives a crashed engine and would keep a dead drive letter
+		if(s?.rclone) {
+			void endIfOurRclone(s.rclone.pid, s.rclone.exe);
+		}
 		sendEvent(owner, { name: 'session-lost', sessionId: id, message: 'The backup process stopped unexpectedly (exit code ' + code + ').' });
 	};
 
@@ -235,6 +262,10 @@ async function closeSession(id: string) {
 	if(s) {
 		sessions.delete(id);
 		await s.host.shutdown();
+		// The engine unmounts on shutdown; make sure rclone is gone if it was ended instead
+		if(s.rclone) {
+			await endIfOurRclone(s.rclone.pid, s.rclone.exe);
+		}
 	}
 }
 
@@ -309,6 +340,24 @@ function registerIpc() {
 			return { ok: false, error: { code: 'internal', message: 'Bad request' } };
 		}
 		return s.host.request(method as EngineMethod, args as any);
+	});
+
+	ipcMain.handle('mount:install-winfsp', async (): Promise<Result<'installed' | 'website'>> => {
+		try {
+			return { ok: true, value: await installWinFsp() };
+		}
+		catch(err: any) {
+			return { ok: false, error: { code: 'io', message: err.message } };
+		}
+	});
+
+	ipcMain.handle('mount:open-drive', async (e, id: unknown): Promise<Result<void>> => {
+		let s = ownedSession(e, id);
+		if(!s?.mounted) {
+			return { ok: false, error: { code: 'not-allowed', message: 'This backup isn\'t mounted' } };
+		}
+		let problem = await shell.openPath(s.mounted.letter + '\\');
+		return problem ? { ok: false, error: { code: 'io', message: problem } } : { ok: true, value: undefined };
 	});
 
 	ipcMain.handle('recent:list', () => settings.recent());

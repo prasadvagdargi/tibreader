@@ -232,3 +232,43 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    Not automated: the OS drag-and-drop itself (Windows' modal drag loop) needs a manual check.
 6. Gotcha while editing: PowerShell 5.1's `Get-Content` reads UTF-8 files as ANSI by default; a
    scripted replace turned "Café" into "CafÃ©". Edit files with the editor tools, or pass `-Encoding UTF8`.
+
+
+2026-10-28: desktop app, M4 (mount as a drive)
+----------------------------------------------
+1. The engine mounts a backup point as a read-only drive letter: a secret-path `WebDavServer` per
+   backup point, plus `RcloneMount`. It reports the mount and rclone's pid/exe to main, and unmounts
+   before it exits.
+2. While mounted, Ctrl+C, dragging and Open use the drive's own paths: instant, any size, no
+   temporary copies.
+   - "Show in drive R:" is in the right-click menu.
+   - Names that aren't valid on Windows (Mac backups) still use temporary copies.
+3. Mount dialog:
+   - free letters (Z: down; R: preferred, last choice remembered)
+   - a WinFsp check, and **Install WinFsp** via `winget install --exact --id WinFsp.WinFsp`
+     (Windows asks for permission); without winget it opens winfsp.dev
+   - The command bar shows "Drive R:" with Open in File Explorer / Unmount.
+4. rclone is bundled.
+   - `npm run fetch-rclone` downloads rclone 1.75.1 (the tested version) and checks it against the
+     SHA-256 pinned from rclone's signed SHA256SUMS. It keeps only `rclone.exe` plus the MIT notice
+     from rclone.org/licence.
+   - Its `rclone.exe` is byte-identical to the one winget installed here.
+   - Main points the engine at it through `TIB_RCLONE`.
+5. Leftover drives: main records rclone's pid and program file in `mounts.json`.
+   - If TibReader is ended from Task Manager, the engine notices main is gone (it checks every 2 s)
+     and unmounts.
+   - If that fails too, the next start ends the recorded rclone, but only if that process id still
+     runs the same rclone.exe.
+6. Bugs and lessons found by the tests:
+   - The mount dialog opened with every button disabled ("Checking..."). Fluent's focus trap then
+     marked the open dialog `aria-hidden`, hiding it from screen readers (and from role-based test
+     queries). Something must stay focusable when a dialog opens, so Cancel now always is.
+     Dialogs are created fresh on open.
+   - On Windows, Playwright's `app.process()` is a launcher, not Electron's main process. Killing it
+     leaves the app running. Tests that end the app use `app.evaluate(() => process.pid)`.
+   - A test cleanup that ended every `rclone.exe` was rightly blocked by the safety check: it could
+     end the user's own rclone. Cleanups only touch processes the tests recorded.
+7. Tests: 12 e2e. Three need WinFsp and rclone and skip without them (CI). They check:
+   - real mount, reading through the drive, Ctrl+C giving drive paths, and unmount
+   - ending the main process removes the drive
+   - the startup cleanup ends a recorded process and spares one whose program file doesn't match

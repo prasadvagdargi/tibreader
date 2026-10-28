@@ -145,9 +145,12 @@ Desktop app (Windows, in progress)
 - Copy to... a folder, Copy (Ctrl+C) and paste in Explorer, or drag files out.
 - Restore a whole drive or folder, with a choice of what happens to files that are already there.
 - Open a file (a read-only copy), or Edit a copy.
+- Mount as a drive letter (rclone is bundled; the app offers to install WinFsp, which asks for
+  administrator permission once). While mounted, copying and dragging come straight from the drive.
 
-The backup itself is never changed. Mounting as a drive letter and packaged downloads are being added;
-see `doc/Plan-desktop-app.md`.
+The backup itself is never changed. Packaged downloads (portable exe, zip, installer) are next; see
+`doc/Plan-desktop-app.md`. For mounting from source, run `npm run fetch-rclone` in `gui/` once (or
+have rclone installed).
 
 To run it from source (after `npm install` and `npm run pretest` in the repository root):
 ```bash
