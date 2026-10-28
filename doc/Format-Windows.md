@@ -75,7 +75,9 @@ Attribute keys seen: `metainfo` (product, task id, computer id, compression, enc
 RecordIndex (type 108)
 ----------------------
 ```
-0   8   magic 01 02 00 10 01 00 00 00
+0   2   01 02
+2   2   uint16 kind: 0x1000 normally (bytes "01 02 00 10 01 00 00 00"); 0x0007 see below
+4   4   uint32 1
 8   8   total file size
 16  4   number of handles N
 20  32*N handles:
@@ -89,6 +91,13 @@ total size); if its decompressed data is shorter, the rest of the slot is zeros 
 file stored as one 4,591-byte block). Verified.
 
 Times (type 5): first value appears to be the creation time, second the modified time.
+
+**Kind 0x0007 (no stored data).** Seen once in 8,506 files: a 16,383-byte Android app cache file
+(`pe_dropped.dat`). Its index has 0 handles, then the security descriptor, then `uint32 1`, `uint32 0`,
+`uint32 16383` and 8 zero bytes (apparently one range covering the whole file). No data records exist
+for it anywhere: its metadata directly follows the previous file's. The reader treats it as zeros (like
+unstored tails) and warns. Whether the original was really all zeros (e.g. a preallocated file) or True
+Image couldn't read it is unknown; a second example would help.
 
 
 Listing (type 103)

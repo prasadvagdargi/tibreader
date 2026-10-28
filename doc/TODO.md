@@ -1,7 +1,8 @@
 To-do list
 ==========
 
-Tracks the work on the `modernize-and-fixes` branch. Each item comes from the October 2026 code review
+Tracks the work on https://github.com/prasadvagdargi/tibreader (until 2026-10-27 the `modernize-and-fixes`
+branch of a fork of dennisss/acronis-tib; now merged into `master`). Each item comes from the October 2026 code review
 (see `WORKLOG.md` for what was done and why). Tick items as they land and keep this file in each commit
 that changes it.
 
@@ -10,7 +11,8 @@ Legend: `[x]` done, `[ ]` to do, `[~]` partly done / blocked (reason given)
 
 Next steps (in priority order)
 ------------------------------
-1. **Merge**: open a pull request from `modernize-and-fixes` into `master` and review it.
+1. **Record index kind 0x0007** (file recorded without data, read as zeros): find out what it means,
+   ideally by backing up a known file that triggers it. See `Format-Windows.md`.
 2. **Quick wins from tib-reader** (Phase 0 of `Plan-tib-reader.md`): recognize `.tibx` and the other known
    variants with clear errors, stop sending True Image 2010-2013 files to the Mac parser, check alternate
    data streams on the real backup, doc fixes.

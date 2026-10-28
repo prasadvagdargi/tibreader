@@ -90,6 +90,19 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
     - Lesson: the process serving the drive must never touch it with synchronous file calls; that
       blocks the WebDAV server and deadlocks. Readiness checks use async calls.
     - If `tib` is killed forcibly, rclone keeps the (dead) drive until it's ended too; documented.
+11. Full `tib verify` of the whole 55 GB backup: 8,537 of 8,538 files passed every MD5 check (21.5 min,
+    ~42 MB/s). The one failure was a new record index kind (0x0007) that stores no data blocks; it is
+    now read as zeros with a warning, and `verify` reports it in its summary instead of failing.
+12. Moved to its own repository, at the maintainer's request:
+    - Created https://github.com/prasadvagdargi/tibreader (public, not a fork) and pushed `master` with
+      the full history: the 13 original commits (authorship kept) and this work, fast-forwarded from
+      `modernize-and-fixes`.
+    - Package renamed to `tibreader`; repository/homepage/author point to the new repo; Dennis Shtatnov
+      stays credited in `LICENSE`, `package.json` contributors and the README.
+    - The old fork was renamed to `acronis-tib-reader-old-fork`, its description points to the new
+      repo, and it is archived (read-only; can be unarchived).
+    - The pull request to dennisss/acronis-tib (#4) had already been closed by its author, unmerged.
+    - Local remotes: `origin` = tibreader, `old-fork` = the archived fork; `upstream` removed.
 
 
 2026-10-27: comparison with acronis-tib-reader
