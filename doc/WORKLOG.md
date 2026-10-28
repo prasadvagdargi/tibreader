@@ -116,3 +116,26 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
   `.tibx` (True Image 2020+), plus NTFS inside disk images. All documented from real files.
 - Found that True Image 2010-2013 headers (version 1, length `0x20`) would be sent to our Mac parser.
 - Plan, risks and what not to copy: `Plan-tib-reader.md`; items added to `TODO.md`.
+
+
+2026-10-27: desktop app plan
+----------------------------
+- Goal from the maintainer: a clean, portable GUI so anyone can open a backup, browse it, and copy,
+  paste, drag, restore ("clone") or open/edit copies of files. Windows first; other OSes later.
+- Decisions:
+  - Electron + Fluent UI React v9, in a new `gui/` folder, so the library stays dependency-free and the
+    app calls it directly (no CLI parsing).
+  - Backups stay read-only; "move" and "edit" mean working on copies.
+  - rclone is bundled; WinFsp (a driver that needs admin once) gets a one-click install offer.
+  - Three packages: portable exe, zip, NSIS installer.
+- Findings that shaped the plan:
+  - Decompression and MD5 checks are synchronous, so the library runs in a separate Electron
+    `utilityProcess` (one per open backup), never in the UI or main process. This also avoids the
+    same-process deadlock noted in `src/mount/rclone.ts` when Explorer reads a mounted drive during a drag.
+  - `WebDavServer` accepted any `Host` header, so a web page could read an open backup through DNS
+    rebinding. The plan adds a Host check and a secret base path (helps the CLI too).
+  - Electron can't put a list of files on the Windows clipboard. Windows PowerShell 5.1's
+    `Set-Clipboard -LiteralPath` can (checked here; PowerShell 7 dropped it). Paths go in through stdin
+    because names from a backup are untrusted.
+- Full plan: `Plan-desktop-app.md`; milestones in `TODO.md` section 11. Work on the `desktop-app` branch,
+  committed and pushed after each step.

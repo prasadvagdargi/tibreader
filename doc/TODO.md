@@ -28,6 +28,7 @@ Next steps (in priority order)
 6. **Windows attributes in mounts**: show hidden/system flags and creation times (needs a per-entry
    metadata read, so cache it).
 7. **Synthetic Mac fixture** following `Format-Mac.md`, so the Mac parser has end-to-end tests.
+8. **Desktop app** (Windows first): milestones in section 11, plan in `Plan-desktop-app.md`.
 
 
 1. Bugs found in review
@@ -132,3 +133,20 @@ Details, sizes and order in `Plan-tib-reader.md`.
 - [ ] Phase 2: NTFS reader (with `$ATTRIBUTE_LIST`, LZNT1, WOF/Xpress) and MBR/GPT partitions
 - [ ] Phase 3: `.tibx` (pages, LSM trees, Zstd segments, split files, backup chain)
 - [ ] Phase 4: encryption, only once real encrypted samples exist
+
+
+11. Desktop app (Windows first)
+-------------------------------
+Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
+- [ ] M1 library groundwork: extract cancel/progress/conflicts, `extractItems`, `measure`, `verifySnapshot`,
+      `describeArchive`, error codes, WebDAV Host check + secret path, `findWinFsp`, `freeDriveLetters`, exports;
+      CLI refactored onto them with unchanged output
+- [ ] M2 app skeleton: `gui/` (Electron + Fluent UI), engine utilityProcess per backup, typed IPC, Welcome,
+      browse (tree, list, breadcrumb, backup point picker), Info panel, friendly errors
+- [ ] M3 getting files out: Copy to / Restore wizard, jobs flyout with cancel and conflicts, Open, Edit a copy,
+      staging, Ctrl+C clipboard (PowerShell `Set-Clipboard -LiteralPath`, paths on stdin), drag-out
+- [ ] M4 mount: bundled rclone, WinFsp detection and install, drive letter picker, mounted paths for
+      clipboard/drag/open, clean unmount on quit or crash
+- [ ] M5 polish: preview pane, search, Verify dialog, properties with attributes, shortcuts, Settings, recent files
+- [ ] M6 packaging: portable exe, zip, NSIS installer with `.tib` association; single instance; portable data
+      folder; release workflow; README section
