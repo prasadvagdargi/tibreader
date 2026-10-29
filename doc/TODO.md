@@ -171,6 +171,22 @@ Details, sizes and order in `Plan-tib-reader.md`. Work on the `more-formats` bra
   - [~] `.tib` encryption: left unsupported, the notes don't pin the framing down (would be a guess)
 
 
+12. Write support (new files only; existing backups are never modified)
+-----------------------------------------------------------------------
+Requested 2026-10-29. Code in `src/write/`.
+- [x] `tib create` / `writeFileBackup()`: Windows file/folder backups from files on this computer
+- [x] `tib edit` / `writeSnapshotBackup()`: a backup plus changes (`--add`, `--delete`, `--overlay`) into a
+      new file; converts disk images and Mac backups to file backups (`--from`)
+- [x] `OverlayFS`: a writable view whose changes live in a separate folder; `tib mount --writable <dir>`
+      (WebDAV PUT/DELETE/MKCOL/MOVE/COPY/PROPPATCH; rclone with `--vfs-cache-mode writes`)
+- [x] `tib export` / `exportImage()`: disk/partition images to `.img` or fixed `.vhd` (volumes wrapped in a
+      one-partition MBR disk so Windows can attach them)
+- [~] Whether True Image accepts new backups: untested (no True Image here); unknown fields are guesses
+- [ ] Try a writable `--drive` mount by hand with Explorer and Office (save, rename, delete)
+- [ ] Split output into several files (`_v2.tib`...) and incremental backups
+- [ ] FUSE mount writable (`--fuse --writable`)
+
+
 11. Desktop app (Windows first)
 -------------------------------
 Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.

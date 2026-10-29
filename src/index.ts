@@ -44,6 +44,15 @@ export type { VerifyOptions, VerifyResult, VerifyProgress, VerifyProblem } from 
 export { describeArchive } from './info';
 export type { ArchiveDescription, SliceDescription, DescribeOptions } from './info';
 
+// Writing new backups (existing backup files are never modified)
+export { writeFileBackup, backupFileName } from './write/writer';
+export type { BackupEntry, WriteBackupOptions, WriteBackupResult, WriteProgress } from './write/writer';
+export { localEntries, snapshotEntries, writeSnapshotBackup, addLocalToOverlay, backupPathOfLocal } from './write/sources';
+export { OverlayFS, isWritable } from './write/overlay';
+export type { WritableFS } from './write/overlay';
+export { exportImage, vhdFooter } from './write/export';
+export type { ExportImageOptions, ExportProgress } from './write/export';
+
 // Mounting
 export { WebDavServer } from './mount/webdav';
 export type { WebDavOptions } from './mount/webdav';

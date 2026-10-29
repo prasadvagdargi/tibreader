@@ -168,7 +168,10 @@ export class RcloneMount {
 	/** Called if rclone stops by itself after mounting (the drive is gone), with its last error output */
 	onUnexpectedExit?: (stderr: string) => void;
 
-	constructor(private _url: string, private _target: string, private _volumeName = 'Backup') {}
+	/**
+	 * @param _isWritable mount writable (the WebDAV server must serve a writable overlay)
+	 */
+	constructor(private _url: string, private _target: string, private _volumeName = 'Backup', private _isWritable = false) {}
 
 	get target() {
 		return this._target;
@@ -205,11 +208,12 @@ export class RcloneMount {
 		let args = [
 			'mount', ':webdav:', this._target,
 			'--webdav-url', this._url,
-			'--read-only',
-			// The backup never changes, so listings can be cached for as long as the mount lives
-			'--dir-cache-time', '1000h',
-			'--attr-timeout', '1h',
 			'--volname', this._volumeName,
+			...(this._isWritable
+				// Programs write in place; rclone keeps changed files locally until it uploads them whole
+				? [ '--vfs-cache-mode', 'writes', '--dir-cache-time', '5s', '--attr-timeout', '1s' ]
+				// The backup never changes, so listings can be cached for as long as the mount lives
+				: [ '--read-only', '--dir-cache-time', '1000h', '--attr-timeout', '1h' ]),
 		];
 
 		let child = spawn(rclone, args, { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });

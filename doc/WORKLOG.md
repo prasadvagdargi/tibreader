@@ -476,3 +476,26 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 5. Tests: AES-128/256 in CBC and GCM, missing password, wrong password, certificate-only records,
    archives with encrypted segments but no key records.
 - Tests: 113 pass.
+
+
+2026-10-29: write support
+-------------------------
+1. Agreed scope: new backups (`tib create`), edited copies (`tib edit`, always a new file), writable
+   mounts with changes in a separate folder (`--writable`), and image export (`tib export`).
+2. `src/write/writer.ts`: streams a Windows file backup to `<name>.partial` and renames it at the end
+   (a cancel or error leaves nothing behind). Same layout the reader and its fixture use; fields the
+   reader doesn't need are written as documented guesses (`Format-Windows.md`, "Writing").
+3. `src/write/sources.ts`: entries from local folders (parents first, symlinks skipped), from any backup
+   view (drive letters kept for Windows file backups; other formats go on a chosen drive), and `--add`.
+4. `src/write/overlay.ts`: `OverlayFS`. New/changed files in `upper/` with reversible, Windows-safe names;
+   deletions and links to local files in `overlay.json` (written atomically). A deleted folder created
+   again starts empty. Changing a backup file copies it up first.
+5. WebDAV handles PUT/DELETE/MKCOL/MOVE/COPY/PROPPATCH when serving an overlay (403 otherwise, as before);
+   locks are granted for names that don't exist yet. rclone mounts writable with `--vfs-cache-mode writes`.
+6. `src/write/export.ts`: raw or fixed-VHD export (footer and CHS geometry per Microsoft's VHD
+   specification; checksum checked in the tests); a bare volume gets an MBR at 1 MiB so Windows can
+   attach it.
+7. CLI: `create`, `edit` (refuses to write over a file of the backup it reads), `export`,
+   `mount --writable`, `--level`, `--as-drive`.
+8. Not tested here: whether True Image opens the new backups; a writable drive with Explorer and Office.
+- Tests: 122 pass (new `test/write.test.ts`).

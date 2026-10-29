@@ -118,6 +118,22 @@ unstored tails) and warns. Whether the original was really all zeros (e.g. a pre
 Image couldn't read it is unknown; a second example would help.
 
 
+Writing (`src/write/writer.ts`)
+------------------------------
+`tib create` / `tib edit` / `writeFileBackup()` write this format: header (random ids), data blocks of
+256 KiB (trailing zeros trimmed, all-zero blocks after the first left out), a BlobSuffix per file, then
+per entry FileMetaStart, Attributes, RecordIndex (files with data) or Security (folders, empty files),
+Times; then Config, Listing, EndTrailer, `[uint64 entry count][uint64 metadata offset][2C 8A E1 94]`,
+padding and footer. Fields this reader doesn't need are written as best guesses:
+- the 4 bytes after raw-deflate records: CRC-32 of the data (the real meaning is unknown);
+- the listing's per-parent hash: CRC-32 of the parent path; second size: size rounded up to 4 KiB;
+- the config record's unknown bytes and the footer's first 8 bytes: zeros; the XML names "tibreader";
+- security descriptors: Everyone has full control (inherited).
+
+This reader opens the result; **whether True Image accepts it has not been tried** (no True Image on the
+build machine). Existing backups are never modified: editing always writes a new file.
+
+
 Listing (type 103)
 ------------------
 ```

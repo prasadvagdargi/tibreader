@@ -2,7 +2,8 @@ tibreader
 =========
 
 **Acronis True Image backup reader.** Read, verify, extract and mount Acronis True Image backup files
-(`.tib` and `.tib.metadata`) without True Image. Backup files are only ever opened read-only.
+(`.tib`, `.tib.metadata` and `.tibx`) without True Image. Existing backup files are only ever opened
+read-only; it can also write new file backups, edited copies of backups, and disk images.
 
 The format is undocumented; everything here is reverse-engineered. See `doc/` for the format notes,
 the work log and the to-do list.
@@ -194,6 +195,39 @@ npm run dev
 `npm run test:e2e` builds the app and drives it with Playwright on synthetic backups. With
 `TIB_SAMPLE` set, it also opens that real backup (read-only). The mount tests need WinFsp and rclone,
 and the packaged-app test needs `npm run dist` first; otherwise they're skipped.
+
+
+Writing: new backups, edited copies, images
+-------------------------------------------
+Existing backup files are never changed. Every command here writes **new** files.
+
+```bash
+tib create "D:/Backups/Photos.tib" "C:/Users/me/Pictures"
+```
+Makes a Windows file/folder backup (`Photos_full_b1_s1_v1.tib`) of files and folders on this computer.
+
+```bash
+tib edit "D:/Backups/Old_full_b1_s1_v1.tib" "D:/Backups/Fixed.tib" --delete /C/Users/me/secret.txt --add "C:/new.txt=/C/Users/me/new.txt"
+```
+Writes a new backup: the old one with files left out (`--delete`) and files or folders added from this
+computer (`--add local=path`). It also converts: `tib edit disk.tibx Files.tib --from "/Volume (Windows)"`
+turns the files of a disk image (or a Mac backup) into a file backup.
+
+```bash
+tib mount "D:/Backups/Old_full_b1_s1_v1.tib" --drive R: --writable "D:/Backups/changes"
+```
+Mounts the backup so programs can change it. Changes go to the `changes` folder; the backup stays as it
+was. `tib edit <backup> <new.tib> --overlay "D:/Backups/changes"` then writes a new backup with them.
+
+```bash
+tib export "D:/Backups/Disk.tibx" "/Volume.img" "D:/Disk.vhd"
+```
+Writes a disk or partition image out as raw bytes (`.img`) or as a fixed VHD (`.vhd`). Windows can
+attach a VHD (Disk Management > Action > Attach VHD) and show its files; a single volume is put inside a
+one-partition disk for that.
+
+New backups open in this tool. **Whether True Image accepts them hasn't been tested** (some fields of
+the format are unknown and written as guesses; see `doc/Format-Windows.md`, "Writing").
 
 
 Library usage
