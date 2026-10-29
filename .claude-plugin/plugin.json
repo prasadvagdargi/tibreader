@@ -1,0 +1,30 @@
+{
+	"name": "tibreader",
+	"description": "Browse, measure, verify and clean up Acronis True Image backups (.tib, .tibx): sizes, largest files, duplicates, differences between backup points, extraction and cleaned-up copies. Backups are only read.",
+	"version": "0.1.0",
+	"author": {
+		"name": "prasadvagdargi",
+		"url": "https://github.com/prasadvagdargi"
+	},
+	"homepage": "https://github.com/prasadvagdargi/tibreader#use-with-claude-and-other-ai-assistants-mcp",
+	"repository": "https://github.com/prasadvagdargi/tibreader",
+	"license": "MIT",
+	"keywords": [
+		"acronis",
+		"true image",
+		"tib",
+		"tibx",
+		"backup",
+		"cleanup",
+		"duplicates"
+	],
+	"mcpServers": {
+		"tibreader": {
+			"command": "node",
+			"args": [
+				"${CLAUDE_PLUGIN_ROOT}/plugin/start-mcp-server.cjs"
+			]
+		}
+	},
+	"icon": "gui/build/icon.png"
+}

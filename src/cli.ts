@@ -12,9 +12,12 @@ import { RcloneMount, normalizeDriveTarget } from './mount/rclone';
 import { detectFormat } from './detect';
 import os from 'node:os';
 import { OverlayFS } from './write/overlay';
-import { backupFileName, writeFileBackup } from './write/writer';
-import { addLocalToOverlay, localEntries, writeSnapshotBackup } from './write/sources';
+import { writeFileBackup } from './write/writer';
+import { addLocalToOverlay, localEntries, refuseToReplaceBackupFiles, writeSnapshotBackup } from './write/sources';
 import { exportImage } from './write/export';
+import { formatSize } from './format';
+import { packageVersion } from './version';
+import { runMcpServer } from './mcp/server';
 
 
 const USAGE = `Usage: tib <command> <backup file> [options]
@@ -31,6 +34,8 @@ Commands:
                                         --overlay); also converts disk images and Mac backups (--from)
   export  <backup> <image> <out>        Write a disk/partition image out, e.g. '/Partition 2.img'
                                         to out.img (raw) or out.vhd (Windows can attach it)
+  mcp                                   Run an MCP server on standard input/output, so AI assistants
+                                        (Claude and others) can browse, measure and clean up backups
 
 <backup> is any file of the backup: NAME_full_b1_s1_v1.tib (Windows), NAME.tib (Mac) or NAME.tibx.
 Existing backup files are only ever read; create, edit and export write new files.
@@ -105,17 +110,6 @@ type Options = {
 	writable?: string; add?: string[]; delete?: string[]; overlay?: string; from?: string; 'as-drive'?: string; level?: string; debug?: boolean; help?: boolean; version?: boolean;
 };
 
-
-export function formatSize(bytes: number): string {
-	let units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-	let v = bytes;
-	let i = 0;
-	while(v >= 1024 && i < units.length - 1) {
-		v /= 1024;
-		i++;
-	}
-	return (i === 0 ? String(v) : v.toFixed(1)) + ' ' + units[i];
-}
 
 function formatDate(d: Date): string {
 	let p = (n: number) => String(n).padStart(2, '0');
@@ -393,11 +387,7 @@ async function cmdEdit(args: string[], opts: Options) {
 		throw new UsageError('Usage: tib edit <backup> <new.tib> [--add local=path] [--delete path] [--overlay dir] [--from path]');
 	}
 	await withArchive(args[0], opts, async (archive) => {
-		// Never write over a file of the backup being read
-		let output = path.resolve(backupFileName(args[1]));
-		if((await archive.files()).some((f) => path.resolve(f.fileName).toLowerCase() === output.toLowerCase())) {
-			throw new Error('The new backup would replace a file of the backup being edited; choose another name');
-		}
+		await refuseToReplaceBackupFiles(archive, args[1]);
 
 		let snapshot = await pickSlice(archive, opts).openFileSystem();
 		let tempDir = opts.overlay ? null : await fs.promises.mkdtemp(path.join(os.tmpdir(), 'tib-edit-'));
@@ -564,25 +554,6 @@ async function cmdMount(args: string[], opts: Options) {
 }
 
 
-/**
- * Version from the package's package.json (searched upwards, so it works from dist/ and test builds)
- */
-function packageVersion(): string {
-	let dir = __dirname;
-	for(let i = 0; i < 4; i++) {
-		let file = path.join(dir, 'package.json');
-		if(fs.existsSync(file)) {
-			let pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
-			if(pkg.name === 'tibreader') {
-				return pkg.version;
-			}
-		}
-		dir = path.dirname(dir);
-	}
-
-	return 'unknown';
-}
-
 export async function main(argv: string[]): Promise<number> {
 	let parsed;
 	try {
@@ -618,6 +589,7 @@ export async function main(argv: string[]): Promise<number> {
 			case 'create': await cmdCreate(args, opts); return 0;
 			case 'edit': await cmdEdit(args, opts); return 0;
 			case 'export': await cmdExport(args, opts); return 0;
+			case 'mcp': await runMcpServer(); return 0;
 			default:
 				throw new UsageError('Unknown command: ' + command);
 		}

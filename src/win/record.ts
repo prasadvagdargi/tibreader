@@ -127,24 +127,6 @@ export type Record = ConfigRecord | IndexRecord | AttributesRecord | TimesRecord
 
 
 /**
- * Read all records until the end of the reader or the end marker
- */
-export async function ReadAllRecords(reader: Reader): Promise<Record[]> {
-	let recs: Record[] = [];
-	let size = await reader.length();
-
-	while(reader.pos() < size) {
-		let rec = await ReadRecord(reader);
-		recs.push(rec);
-		if(rec.type === RecordType.EndTrailer) {
-			break;
-		}
-	}
-
-	return recs;
-}
-
-/**
  * Reads the type of the record at the current position without moving the reader
  */
 export async function PeekRecordType(reader: Reader): Promise<number> {
