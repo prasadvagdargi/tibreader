@@ -216,3 +216,18 @@ Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
   - [ ] Try the macOS and Linux apps by hand (only built and library-tested on GitHub so far)
   - [ ] Drag-and-drop to Explorer by hand (Windows' own drag loop can't be automated)
   - [x] Try the app on the real 55 GB backup (`TIB_SAMPLE`; `gui/test/e2e/real-backup.spec.ts`)
+
+
+13. MCP server, Claude Code plugin and skill (plan: `Plan-mcp.md`)
+-----------------------------------------------------------------
+- [x] `tib mcp`: hand-written stdio JSON-RPC server (no new dependency); requests run one at a time;
+      open backups and file lists cached; reopened when the file changes
+- [x] Read-only tools: find backups in a host folder (with identical-copy check), describe, list, folder
+      sizes, find files, duplicates by content, read text, compare backup points, verify
+- [x] Writing tools (new files only): extract files, cleaned-up copy of a backup
+- [x] Claude Code plugin (`.claude-plugin/`, launcher builds `dist/` on first start), `tib-backups` skill,
+      README section (plugin, `claude mcp add`, Claude Desktop, Proxmox)
+- [x] Tests: `test/mcp.test.ts` runs the protocol and every tool through `tib mcp`
+- [ ] Try it with Claude Code on a real backup folder (e.g. the Proxmox storage)
+- [ ] Find duplicates and compare across several backups at once (today: within one backup point, or
+      two backups with `compare_backup_points`)

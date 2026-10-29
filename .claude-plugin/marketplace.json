@@ -1,0 +1,15 @@
+{
+	"name": "tibreader",
+	"description": "Tools for Acronis True Image backups: an MCP server and skill for browsing, measuring and cleaning them up.",
+	"owner": {
+		"name": "prasadvagdargi",
+		"url": "https://github.com/prasadvagdargi"
+	},
+	"plugins": [
+		{
+			"name": "tibreader",
+			"source": "./",
+			"description": "Browse, measure, verify and clean up Acronis True Image backups (.tib, .tibx). Backups are only read."
+		}
+	]
+}
