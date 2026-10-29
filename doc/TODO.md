@@ -211,5 +211,8 @@ Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
   - [ ] Try the installer by hand: install, double-click a `.tib`, uninstall (not done on the build machine,
         since it adds a Start menu entry and a file association)
   - [ ] Code signing (SmartScreen warns about unsigned downloads)
+  - [x] macOS (dmg/zip, Intel and Apple Silicon, unsigned) and Linux (AppImage, tar.gz) packages built by
+        the release workflow; rclone fetched per platform into `gui/vendor/rclone/<os>-<arch>/`
+  - [ ] Try the macOS and Linux apps by hand (only built and library-tested on GitHub so far)
   - [ ] Drag-and-drop to Explorer by hand (Windows' own drag loop can't be automated)
   - [x] Try the app on the real 55 GB backup (`TIB_SAMPLE`; `gui/test/e2e/real-backup.spec.ts`)

@@ -1,7 +1,8 @@
 name: Release
 
-# Pushing a tag like v0.1.0 builds the Windows desktop app (installer, portable exe, zip), tests it,
-# and attaches the files to a draft GitHub release to review and publish by hand.
+# Pushing a tag like v0.1.0 builds the desktop app for Windows (installer, portable exe, zip), macOS
+# (dmg and zip, Intel and Apple Silicon) and Linux (AppImage, tar.gz), tests it, and attaches every file
+# to a draft GitHub release to review and publish.
 on:
   push:
     tags: ['v*']
@@ -10,11 +11,16 @@ permissions:
   contents: read
 
 jobs:
-  windows:
-    name: Desktop app for Windows
-    runs-on: windows-latest
-    permissions:
-      contents: write # to create the draft release
+  build:
+    name: Desktop app for ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: windows-latest, name: Windows }
+          - { os: macos-latest, name: macOS }
+          - { os: ubuntu-latest, name: Linux }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -43,20 +49,44 @@ jobs:
         working-directory: gui
       - run: npm run typecheck
         working-directory: gui
-      # Fetches the pinned rclone (checksum checked), builds, and packages all three targets
+      # Fetches the pinned rclone for this OS (checksum checked), builds, and packages this OS's targets
       - run: npm run dist
         working-directory: gui
-      # Includes the packaged-app test; the mount tests skip (no WinFsp on the runner)
-      - run: npx playwright test
+      # The end-to-end tests drive Windows features (clipboard, drive letters); they include the
+      # packaged-app test. The mount tests skip (no WinFsp on the runner).
+      - if: runner.os == 'Windows'
+        run: npx playwright test
         working-directory: gui
 
+      - uses: actions/upload-artifact@v7
+        with:
+          name: app-${{ runner.os }}
+          if-no-files-found: error
+          path: |
+            gui/release/TibReader-Setup-*.exe
+            gui/release/TibReader-*-portable.exe
+            gui/release/TibReader-*-win-x64.zip
+            gui/release/TibReader-*-mac-*.dmg
+            gui/release/TibReader-*-mac-*.zip
+            gui/release/TibReader-*-linux-*.AppImage
+            gui/release/TibReader-*-linux-*.tar.gz
+
+  release:
+    name: Draft release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to create the draft release
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
       - name: Draft release
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            gui/release/TibReader-Setup-*.exe \
-            gui/release/TibReader-*-portable.exe \
-            gui/release/TibReader-*-win-x64.zip \
+          ls -l dist
+          gh release create "$GITHUB_REF_NAME" dist/* \
             --draft --generate-notes --title "TibReader $GITHUB_REF_NAME"

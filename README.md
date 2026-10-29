@@ -167,20 +167,28 @@ Desktop app (Windows)
 
 The backup itself is never changed. Design notes: `doc/Plan-desktop-app.md`.
 
-**Downloads** (from the GitHub releases page), all for 64-bit Windows 10 and 11:
+**Downloads** (from the GitHub releases page):
 
 | File | What it is |
 |---|---|
-| `TibReader-Setup-<version>.exe` | Installer (no administrator needed): Start menu entry, and double-clicking a `.tib` opens it |
-| `TibReader-<version>-portable.exe` | One file, nothing installed; keeps its settings in a `TibReader Data` folder beside it (good for a USB stick). Starts slower: it unpacks itself first |
-| `TibReader-<version>-win-x64.zip` | The same as a folder: unzip and run `TibReader.exe`; starts instantly; settings beside it too |
+| `TibReader-Setup-<version>.exe` | Windows 10/11 (64-bit) installer (no administrator needed): Start menu entry, and double-clicking a `.tib` opens it |
+| `TibReader-<version>-portable.exe` | Windows, one file, nothing installed; keeps its settings in a `TibReader Data` folder beside it (good for a USB stick). Starts slower: it unpacks itself first |
+| `TibReader-<version>-win-x64.zip` | Windows, the same as a folder: unzip and run `TibReader.exe`; starts instantly; settings beside it too |
+| `TibReader-<version>-mac-arm64.dmg` / `-mac-x64.dmg` | macOS, Apple Silicon / Intel (`.zip` versions too) |
+| `TibReader-<version>-linux-x86_64.AppImage` | Linux: make it executable and run it (`.tar.gz` too) |
 
-The files aren't code-signed yet, so Windows SmartScreen may say "Windows protected your PC": choose
-**More info**, then **Run anyway**.
+None of the files are code-signed yet:
+- **Windows SmartScreen** may say "Windows protected your PC": choose **More info**, then **Run anyway**.
+- **macOS** says the app can't be checked: right-click it, choose **Open**, then **Open** again (once).
 
-**Building**: `npm run dist` in `gui/` makes all three in `gui/release/` (it downloads the pinned rclone
-first, checking its checksum). Pushing a `v<version>` tag does the same on GitHub and creates a draft
-release. For mounting while running from source, run `npm run fetch-rclone` once (or have rclone installed).
+The app was made and tested on Windows. The macOS and Linux builds are built and their library tests run
+on GitHub, but the app hasn't been tried by hand there yet. Mounting as a drive there needs macFUSE
+(macOS) or FUSE (Linux).
+
+**Building**: `npm run dist` in `gui/` makes this OS's packages in `gui/release/` (it downloads the pinned
+rclone first, checking its checksum). Pushing a `v<version>` tag builds all three OSes on GitHub and creates
+a draft release. For mounting while running from source, run `npm run fetch-rclone` once (or have rclone
+installed).
 
 To run it from source (after `npm install` and `npm run pretest` in the repository root):
 ```bash

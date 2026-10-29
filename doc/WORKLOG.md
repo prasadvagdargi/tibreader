@@ -512,3 +512,21 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 4. Checks: library 122 tests; app typecheck; app e2e 17 passed, 1 skipped (real backup not connected).
 5. State of the tib-reader plan: Phases 0-4 done (4 experimental and `.tibx` only), plus write support.
    Everything new is tested only on generated files; real samples are next step 1 in `TODO.md`.
+
+
+2026-10-29: merge, and releases for every OS
+--------------------------------------------
+1. PR #2 conflicted with `master`: `desktop-app` had been squash-merged as #1, while `more-formats` still
+   carried its original commits. `master`'s tree was exactly `desktop-app`'s tip (the branch's base), so
+   the merge kept the branch's tree (`-s ours`). Tests and CI passed; squash-merged as #2.
+2. The maintainer asked for app builds for all OSes in the release. A first `v0.1.0` tag had started the
+   Windows-only workflow; that run was cancelled before it made a release.
+3. `fetch-rclone.mjs` fetches rclone for each OS (macOS: Intel and Apple Silicon) into
+   `vendor/rclone/<os>-<arch>/`, each zip checked against rclone's published SHA-256 (the Windows hash
+   matches the one pinned before). `electron-builder.yml` picks the folder with `${os}-${arch}`, and adds
+   mac (dmg, zip; unsigned with `identity: null`) and Linux (AppImage, tar.gz) targets. The app looks for
+   `rclone` (not `.exe`) off Windows.
+4. `release.yml`: a build job per OS (library tests, app typecheck, packages; the app's e2e on Windows),
+   then one job creating the draft release with every file.
+5. Checked here: the Windows packages build with the new rclone layout and the packaged-app test passes.
+   macOS and Linux builds are only checked by the workflow.
