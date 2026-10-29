@@ -178,10 +178,11 @@ describe('Windows backups (synthetic)', () => {
 		removeDir(dir);
 	});
 
-	test('refuses sector-by-sector backups without leaking file handles', async () => {
+	test('fails cleanly on a damaged disk-image trailer without leaking file handles', async () => {
 		let dir = tempDir();
+		// File-backup data with a disk-image trailer: the disk-image reader can't make sense of it
 		let file = writeWindowsBackup(dir, standardEntries(), { sectorBySector: true });
-		await assert.rejects(openArchive(file), NotSupportedError);
+		await assert.rejects(openArchive(file), FormatError);
 		removeDir(dir);
 	});
 

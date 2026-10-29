@@ -4,6 +4,13 @@ import { AddressInfo } from 'node:net';
 import { FsEntry, SnapshotFS } from '../fs/types';
 import { splitPath } from '../fs/tree';
 import { warn } from '../log';
+import { pipeline } from 'node:stream/promises';
+import { isWritable, WritableFS } from '../write/overlay';
+
+function posixDirname(p: string) {
+	let i = p.replace(/\/+$/, '').lastIndexOf('/');
+	return i <= 0 ? '/' : p.slice(0, i);
+}
 
 
 export interface WebDavOptions {
@@ -117,7 +124,7 @@ export class WebDavServer {
 
 		switch(req.method) {
 			case 'OPTIONS':
-				res.setHeader('Allow', ALLOW);
+				res.setHeader('Allow', isWritable(this._fs) ? ALLOW_WRITABLE : ALLOW);
 				return send(res, 200);
 
 			case 'PROPFIND':
@@ -128,7 +135,7 @@ export class WebDavServer {
 				return this.get(req, res, urlPath);
 
 			// Windows asks for locks before opening some files. Hand out locks that don't do
-			// anything, since nothing can be written anyway.
+			// anything (one client at a time is assumed).
 			case 'LOCK':
 				return this.lock(req, res, urlPath);
 
@@ -141,11 +148,125 @@ export class WebDavServer {
 			case 'COPY':
 			case 'MOVE':
 			case 'PROPPATCH':
-				return send(res, 403, 'This backup is read-only');
+				if(!isWritable(this._fs)) {
+					req.resume();
+					return send(res, 403, 'This backup is read-only');
+				}
+				return this.write(req, res, urlPath, this._fs);
 
 			default:
-				res.setHeader('Allow', ALLOW);
+				res.setHeader('Allow', isWritable(this._fs) ? ALLOW_WRITABLE : ALLOW);
 				return send(res, 405);
+		}
+	}
+
+	/**
+	 * Changes through a writable view (an overlay; the backup itself is never written)
+	 */
+	private async write(req: http.IncomingMessage, res: http.ServerResponse, urlPath: string, target: WritableFS) {
+		let existing = await target.stat(urlPath);
+		try {
+			switch(req.method) {
+				case 'PUT': {
+					if(existing && existing.type === 'directory') {
+						req.resume();
+						return send(res, 405, 'Is a folder');
+					}
+					let parent = await target.stat(posixDirname(urlPath));
+					if(!parent || parent.type !== 'directory') {
+						req.resume();
+						return send(res, 409, 'Parent folder missing');
+					}
+					await pipeline(req, await target.createWriteStream(urlPath));
+					return send(res, existing ? 204 : 201);
+				}
+
+				case 'DELETE':
+					req.resume();
+					if(!existing) {
+						return send(res, 404);
+					}
+					await target.remove(urlPath);
+					return send(res, 204);
+
+				case 'MKCOL': {
+					req.resume();
+					if(existing) {
+						return send(res, 405, 'Already exists');
+					}
+					let parent = await target.stat(posixDirname(urlPath));
+					if(!parent || parent.type !== 'directory') {
+						return send(res, 409, 'Parent folder missing');
+					}
+					await target.mkdir(urlPath);
+					return send(res, 201);
+				}
+
+				case 'MOVE':
+				case 'COPY': {
+					req.resume();
+					if(!existing) {
+						return send(res, 404);
+					}
+					let destination = this.destinationPath(req.headers['destination']);
+					if(!destination) {
+						return send(res, 400, 'Bad Destination header');
+					}
+					let destinationExists = await target.stat(destination);
+					if(destinationExists && String(req.headers['overwrite'] || 'T').toUpperCase() === 'F') {
+						return send(res, 412, 'Destination exists');
+					}
+					if(req.method === 'MOVE') {
+						await target.rename(urlPath, destination);
+					}
+					else {
+						if(destinationExists) {
+							await target.remove(destination);
+						}
+						await target.copyTree(urlPath, destination);
+					}
+					return send(res, destinationExists ? 204 : 201);
+				}
+
+				case 'PROPPATCH': {
+					// Times and attributes that clients set are accepted but not stored
+					req.resume();
+					if(!existing) {
+						return send(res, 404);
+					}
+					let body = '<?xml version="1.0" encoding="utf-8"?>\n<D:multistatus xmlns:D="DAV:"><D:response>' +
+						'<D:href>' + escapeXml(hrefFor(existing, this._base)) + '</D:href>' +
+						'<D:propstat><D:prop/><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>\n';
+					res.statusCode = 207;
+					res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+					res.setHeader('Content-Length', Buffer.byteLength(body));
+					return res.end(body);
+				}
+			}
+		}
+		catch(e: any) {
+			return send(res, 409, e && e.message ? e.message : String(e));
+		}
+	}
+
+	/** Path inside the backup from a Destination header (absolute URL or path), or null */
+	private destinationPath(header: string | string[] | undefined): string | null {
+		if(typeof header !== 'string') {
+			return null;
+		}
+		try {
+			let p = decodeURIComponent(new URL(header, 'http://localhost').pathname);
+			splitPath(p);
+			if(this._base) {
+				if(p !== this._base && !p.startsWith(this._base + '/')) {
+					return null;
+				}
+				p = p.slice(this._base.length) || '/';
+			}
+			return p;
+		}
+		catch(e) {
+			return null;
 		}
 	}
 
@@ -235,14 +356,22 @@ export class WebDavServer {
 		let kids = await this._fs.list(entry.path) || [];
 		let base = hrefFor(entry, this._base);
 		let rows = kids.map((k) => {
-			let name = escapeXml(k.name) + (k.type === 'directory' ? '/' : '');
-			return '<li><a href="' + escapeXml(base + encodeURIComponent(k.name) + (k.type === 'directory' ? '/' : '')) + '">' + name + '</a></li>';
+			let isDir = k.type === 'directory';
+			let name = escapeXml(k.name) + (isDir ? '/' : '');
+			let href = escapeXml(base + encodeURIComponent(k.name) + (isDir ? '/' : ''));
+			return '<tr><td><a href="' + href + '"' + (isDir ? '' : ' download') + '>' + name + '</a></td>' +
+				'<td class="n">' + (isDir ? '' : formatBytes(k.size)) + '</td>' +
+				'<td>' + escapeXml(k.mtime.toISOString().slice(0, 16).replace('T', ' ')) + '</td></tr>';
 		});
 
-		let body = '<!doctype html><meta charset="utf-8"><title>' + escapeXml(entry.path) + '</title>' +
-			'<h1>' + escapeXml(entry.path) + '</h1><ul>' +
-			(entry.path !== '/' ? '<li><a href="../">../</a></li>' : '') +
-			rows.join('') + '</ul>';
+		let body = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">' +
+			'<title>' + escapeXml(entry.path) + '</title>' +
+			'<style>body{font:14px system-ui,sans-serif;margin:16px}table{border-collapse:collapse}' +
+			'td,th{padding:3px 14px 3px 0;text-align:left}.n{text-align:right}</style>' +
+			'<h1>' + escapeXml(entry.path) + '</h1>' +
+			'<table><tr><th>Name</th><th class="n">Size</th><th>Modified (UTC)</th></tr>' +
+			(entry.path !== '/' ? '<tr><td><a href="../">../</a></td><td></td><td></td></tr>' : '') +
+			rows.join('') + '</table>';
 
 		res.statusCode = 200;
 		res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -253,7 +382,8 @@ export class WebDavServer {
 	private async lock(req: http.IncomingMessage, res: http.ServerResponse, urlPath: string) {
 		req.resume();
 
-		if(!(await this._fs.stat(urlPath))) {
+		// Clients lock a new file's name before creating it, which only makes sense when writable
+		if(!isWritable(this._fs) && !(await this._fs.stat(urlPath))) {
 			return send(res, 404);
 		}
 
@@ -275,6 +405,7 @@ export class WebDavServer {
 
 
 const ALLOW = 'OPTIONS, GET, HEAD, PROPFIND, LOCK, UNLOCK';
+const ALLOW_WRITABLE = ALLOW + ', PUT, DELETE, MKCOL, COPY, MOVE, PROPPATCH';
 
 // Windows FILE_ATTRIBUTE_* values shown to Windows clients. Files aren't marked read-only, because
 // Windows would keep that flag on copies; writes are refused by the server anyway.
@@ -292,6 +423,17 @@ function send(res: http.ServerResponse, status: number, text?: string) {
 		res.setHeader('Content-Length', 0);
 		res.end();
 	}
+}
+
+function formatBytes(n: number) {
+	let units = [ 'B', 'KB', 'MB', 'GB', 'TB' ];
+	let i = 0;
+	let v = n;
+	while(v >= 1024 && i < units.length - 1) {
+		v /= 1024;
+		i++;
+	}
+	return (i === 0 ? String(v) : v.toFixed(1)) + ' ' + units[i];
 }
 
 function escapeXml(s: string) {

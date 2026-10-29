@@ -55,6 +55,36 @@ function rawrec(type: number, data: Buffer) {
 	return Buffer.concat([ Buffer.from([ type ]), zlib.deflateRawSync(data), Buffer.alloc(4) ]);
 }
 
+/**
+ * Writes one slice's data as .tib files: header, data, padding and footer (the footer only on the last
+ * file). Returns the file names. 'firstSequence' continues the numbering across slices.
+ */
+export function writeSliceFiles(dir: string, baseName: string, sliceData: Buffer, split = 0, firstSequence = 1): string[] {
+	let size = split > 0 ? split : sliceData.length;
+	let parts: Buffer[] = [];
+	for(let off = 0; off < sliceData.length; off += size) {
+		parts.push(sliceData.subarray(off, off + size));
+	}
+
+	let archiveKey = Buffer.from('a1a2a3a4', 'hex');
+	let sliceKey = Buffer.from('b1b2b3b4', 'hex');
+	let files: string[] = [];
+	parts.forEach((part, i) => {
+		let h = header(firstSequence + i, archiveKey, sliceKey, Buffer.from([ 0xc0, 0xc1, 0xc2, i ]));
+		let body: Buffer[] = [ h, part ];
+		if(i === parts.length - 1) {
+			let pad = (32 - ((part.length + 48) % 32)) % 32;
+			let footer = Buffer.alloc(16);
+			footer.writeBigUInt64LE(BigInt(sliceData.length), 8);
+			body.push(Buffer.alloc(pad), footer, Buffer.from(h).reverse());
+		}
+		let file = path.join(dir, baseName + '_v' + (i + 1) + '.tib');
+		fs.writeFileSync(file, Buffer.concat(body));
+		files.push(file);
+	});
+	return files;
+}
+
 function header(sequence: number, archiveKey: Buffer, sliceKey: Buffer, volumeKey: Buffer) {
 	let h = Buffer.alloc(32);
 	h.writeUInt32LE(MAGIC, 0);

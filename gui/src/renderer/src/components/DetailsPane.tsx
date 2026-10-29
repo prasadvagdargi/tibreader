@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Caption1, makeStyles, Spinner, Subtitle2, Text, tokens } from '@fluentui/react-components';
 import { Open20Regular } from '@fluentui/react-icons';
-import type { Contents, Entry, EntryDetails } from '../../../shared/api';
+import type { BackupFormat, Contents, Entry, EntryDetails } from '../../../shared/api';
 import { call, errorMessage } from '../api';
 import { displayName, extensionOf, iconFor, typeOf } from '../fileTypes';
 import { formatCount, formatLongDate, formatSize, plural } from '../format';
@@ -98,7 +98,7 @@ export function previewUrl(sessionId: string, slice: number, path: string): stri
 }
 
 /** The path as it was on the backed-up computer: C:\Users\... for Windows backups */
-export function originalPath(path: string, format: 'Windows' | 'Mac'): string {
+export function originalPath(path: string, format: BackupFormat): string {
 	if(format !== 'Windows') {
 		return path;
 	}
@@ -131,7 +131,7 @@ function Row(props: { label: string; children: ReactNode }) {
 	);
 }
 
-function Preview(props: { sessionId: string; slice: number; entry: Entry; format: 'Windows' | 'Mac' }) {
+function Preview(props: { sessionId: string; slice: number; entry: Entry; format: BackupFormat }) {
 	let s = useStyles();
 	let kind = props.entry.type === 'file' && props.entry.size > 0 ? PREVIEWS[extensionOf(props.entry.name)] ?? null : null;
 	let url = previewUrl(props.sessionId, props.slice, props.entry.path);
@@ -176,7 +176,7 @@ function Preview(props: { sessionId: string; slice: number; entry: Entry; format
 export function DetailsPane(props: {
 	sessionId: string;
 	slice: number;
-	format: 'Windows' | 'Mac';
+	format: BackupFormat;
 	selected: Entry[];
 	/** Shown when nothing is selected */
 	folderName: string;

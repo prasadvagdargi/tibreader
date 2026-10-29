@@ -153,7 +153,7 @@ function start() {
 
 function backupFilesIn(args: string[], cwd: string): string[] {
 	return args
-		.filter((a) => !a.startsWith('-') && /\.tib(\.metadata)?$/i.test(a))
+		.filter((a) => !a.startsWith('-') && /\.tibx?(\.metadata)?$/i.test(a))
 		.map((a) => path.resolve(cwd, a))
 		.filter((f) => fs.existsSync(f));
 }
@@ -366,7 +366,7 @@ function registerIpc() {
 			title: 'Open a backup',
 			properties: ['openFile'],
 			filters: [
-				{ name: 'Acronis True Image backups', extensions: ['tib', 'metadata'] },
+				{ name: 'Acronis True Image backups', extensions: ['tib', 'tibx', 'metadata'] },
 				{ name: 'All files', extensions: ['*'] },
 			],
 		};

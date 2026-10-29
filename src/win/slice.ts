@@ -1,5 +1,9 @@
 import fs from 'node:fs';
-import Slice, { SliceConfig } from '../slice';
+import Slice, { SliceConfig, SliceKind } from '../slice';
+import { SnapshotFS } from '../fs/types';
+import { openSectorDisk, SectorDisk } from '../sector/open';
+import { DiskFS } from '../disk/fs';
+import { fileKey } from '../cachedir';
 import { ListingRecord, ReadRecord, RecordType } from './record';
 import { Windows2015Volume } from './volume';
 import { ConcatenatedReader, Reader } from '../reader';
@@ -88,14 +92,14 @@ export default class WindowsSlice extends Slice {
 				throw new FormatError('Could not validate slice trailer');
 			}
 
-			// The sector-by-sector trailer is parsed, but where it keeps the slice metadata isn't known yet
-			if(s.trailer.form === SliceForm.SectorBySector) {
-				throw new NotSupportedError('Sector-by-sector (disk image) backups are not supported yet', 'disk-image');
-			}
-
 			s._fileTime = (await fs.promises.stat(lastVolume.fileName)).mtime;
 
-			await s.readMetadata();
+			if(s.trailer.form === SliceForm.SectorBySector) {
+				await s.openDisk(lastVolume.fileName);
+			}
+			else {
+				await s.readMetadata();
+			}
 
 			return s;
 		}
@@ -163,9 +167,39 @@ export default class WindowsSlice extends Slice {
 	private _cache: LRUCache<number, Buffer> = createBlockCache<number>();
 	private _closed = false;
 
+	/** Disk-image backup points only */
+	disk?: SectorDisk;
+	private _diskCache = createBlockCache<string>();
+	private _diskFs?: Promise<DiskFS>;
+
 	private constructor(volumes: Windows2015Volume[], parent: WindowsSlice|null, reader: Reader) {
 		super(volumes, parent);
 		this.reader = reader;
+	}
+
+	override get kind(): SliceKind {
+		return this.disk ? 'disk' : 'files';
+	}
+
+	/**
+	 * Opens the image(s) of a sector-by-sector (disk/partition) backup point
+	 */
+	private async openDisk(lastFile: string) {
+		let sliceStart = (await this.absoluteReader.length()) - (await this.reader.length());
+		let parent = this.parent as WindowsSlice | null;
+
+		this.disk = await openSectorDisk(this.absoluteReader, sliceStart, {
+			cache: this._diskCache,
+			id: 'slice' + sliceStart,
+			indexKey: fileKey(lastFile, 'sector-slice@' + sliceStart),
+			parent: parent && parent.disk ? parent.disk : null,
+		});
+
+		this.config = this.disk.config;
+		let enc = this.config.encryption;
+		if(enc && enc.toLowerCase() !== 'none') {
+			throw new NotSupportedError('Encrypted backups are not supported (encryption: ' + enc + ')', 'encrypted');
+		}
 	}
 
 	/**
@@ -237,7 +271,14 @@ export default class WindowsSlice extends Slice {
 		return this._creationTime || this._fileTime || new Date(0);
 	}
 
-	async openFileSystem() {
+	async openFileSystem(): Promise<SnapshotFS> {
+		if(this.disk) {
+			if(!this._diskFs) {
+				this._diskFs = DiskFS.Create(this.disk.images, this.creationTime);
+				this._diskFs.catch(() => { this._diskFs = undefined; });
+			}
+			return this._diskFs;
+		}
 		return new WindowsFS(this.absoluteReader, this.listing.files, this._cache, this.creationTime);
 	}
 
@@ -248,6 +289,7 @@ export default class WindowsSlice extends Slice {
 
 		this._closed = true;
 		this._cache.clear();
+		this._diskCache.clear();
 		await this.reader.close();
 		if(this.absoluteReader) {
 			await this.absoluteReader.close();

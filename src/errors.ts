@@ -5,11 +5,12 @@
  * - unexpected-name: a Windows backup file was renamed, so its other parts can't be found
  * - missing-part: a file of a split backup or chain is missing (or an extra one is present)
  * - damaged: the data doesn't match the format (corrupt, truncated or an unknown variant)
- * - encrypted: the backup is encrypted
- * - disk-image: a sector-by-sector (whole disk/partition) backup
+ * - encrypted: the backup is encrypted (and no password was given, or its kind can't be decrypted)
+ * - wrong-password: the password given doesn't open the backup
+ * - disk-image: a sector-by-sector (whole disk/partition) backup (no longer raised; kept for callers)
  * - unsupported: anything else this library can't read yet
  */
-export type ErrorCode = 'not-a-backup' | 'unexpected-name' | 'missing-part' | 'damaged' | 'encrypted' | 'disk-image' | 'unsupported';
+export type ErrorCode = 'not-a-backup' | 'unexpected-name' | 'missing-part' | 'damaged' | 'encrypted' | 'wrong-password' | 'disk-image' | 'unsupported';
 
 /**
  * The file doesn't match what we know about the .tib format (corrupt, truncated or an unknown variant)

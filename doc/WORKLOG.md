@@ -344,3 +344,171 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
      full verify).
    - Searching for a file the library picked finds it in about a second.
    - Copy to writes the same bytes and modified time as the library reads (`G:\$TXRAJNL.DAT`, 1 MB).
+
+
+2026-10-29: more formats and write support, Phase 0 (quick wins)
+----------------------------------------------------------------
+- Request from the maintainer: implement every phase of `Plan-tib-reader.md` and add write support.
+  Asked what "write" should mean, since the desktop app plan said backups stay read-only. Answer: all of
+  - `tib create`: new file/folder backups from files on disk
+  - editing a backup, always into a NEW file (the original is never modified)
+  - a writable mount whose changes go to a separate folder (overlay)
+  - export/convert (disk images to `.img`/`.vhd`)
+  Encryption ships as experimental (no real encrypted sample). Work on `more-formats`, branched from
+  `desktop-app` so the app gets the new formats.
+- No real backup is connected to this machine now (only C:), there is no WSL distribution and no admin
+  rights. So every new format is tested against synthetic files written by our own fixture writers;
+  NTFS images will come from a small generator in the tests.
+- Done:
+  1. `src/detect.ts`: `detectFormat()`/`detectFromBytes()` recognize `.tib` (Windows/Mac), `.tibx`
+     (archive page with `ARCH`, or a `-NNNN` data file), True Image 2010-2013, old file-backup containers
+     (`8F5C36C6`, `44686EB4`) and tape. `Archive.Open` uses it first; unsupported kinds get a
+     `NotSupportedError` naming them. `Archive.AddFileType()` registers formats without a `.tib` header.
+  2. Version 1 with a 32-byte header no longer goes to the Mac parser.
+  3. `archive.format`, `archive.files()` and `slice.kind` ('files' / 'disk') so `describeArchive` and the
+     app can describe formats that have no `.tib` volumes.
+  4. `tib info` prints the detected format even when it can't open the file.
+  5. WebDAV folder page: a table with sizes and dates, files as downloads. README says browsers have no
+     50 MB limit.
+  6. `Format-Windows.md`: header ids, listing fields, trailer record count, True Image 2016 sample and
+     the alternate-data-stream lead.
+- Blocked: the alternate data stream check and the raw-deflate check value need the real backup.
+- Tests: 79 pass (new `test/detect.test.ts`).
+
+
+2026-10-29: Phase 1, sector-by-sector (disk image) .tib
+-------------------------------------------------------
+1. Format knowledge from acronis-tib-reader written up in `Format-Sector.md`, including what is assumed
+   rather than known (incremental points, several chunk maps, encryption detection).
+2. `src/sector/`:
+   - `tlv.ts`: the trailer's tag/length records turn out to be the same grammar as the chunk-map headers
+     (the 41-byte modern / 37-byte legacy trailers decode exactly).
+   - `chunkmap.ts`: decode and encode (column-wise storage, zigzag deltas) without BigInt; 200,000
+     records decode in well under a second.
+   - `open.ts`: trailer, locator search, chunk-map regions (geometry from tags 2/3/4; the 19-byte modern
+     header is exactly tags 2, 3, 4 and a 3-byte tag 6), legacy walk, metainfo XML.
+   - `deflate.ts`: end of a zlib stream from stored-block headers only, so the legacy walk reads ~9 small
+     headers per block instead of decompressing it.
+   - `image.ts`: `SectorImage` (bitmap + popcount, LRU cache, incremental fallback).
+   - `indexcache.ts` + `src/cachedir.ts`: the legacy walk is cached per file (path + size + time) in the
+     user's cache folder, written atomically.
+3. `src/disk/`: `DiskImage`, MBR (with logical partitions) and GPT tables, and `DiskFS`, the view of a
+   disk-image backup point (`Volume.img`, or `Disk.img` + `Partition N.img`; volume folders once a file
+   system reader is registered, Phase 2).
+4. `WindowsSlice` opens disk-image slices instead of refusing them; `slice.kind` is 'disk'.
+   `verifySnapshot` reads each stored image once (every block decompressed and size-checked) and keeps
+   going after damage so every damaged area is reported.
+5. `test/helpers/sector-fixture.ts` writes modern and legacy images (stored/deflate/mixed blocks,
+   out-of-order blocks, unused clusters, split files, several partition images, incremental chains,
+   corrupted blocks, encrypted metainfo).
+6. Bug in the new fixture caught by a test: its pseudo-random generator multiplied past 2^53, so the
+   "random" image was almost all zeros (and tests passed trivially). Fixed with `Math.imul`.
+7. Two older tests expected "disk images are not supported"; that fake disk image (file-backup data with
+   a disk-image trailer) now fails as damaged instead.
+- Tests: 92 pass (new `test/sector.test.ts`).
+
+
+2026-10-29: CLAUDE.md
+---------------------
+- The maintainer asked for engineering principles in `CLAUDE.md` (YAGNI, DRY after the second
+  duplication, fail fast, simple first, delete aggressively, long self-explanatory names), plus the
+  project's conventions (read-only backups, branch/commit/push, notes kept in step).
+- Applied right away: the LZNT1 compressor moved out of the library into `test/helpers/compressors.ts`
+  (only tests need it), and the new decompressors use descriptive names.
+
+
+2026-10-29: Phase 2, NTFS
+-------------------------
+1. `src/ntfs/volume.ts`: boot sector, MFT (which describes itself; an MFT with an `$ATTRIBUTE_LIST` is
+   followed using the runs known so far), records with update sequences, attributes, `$ATTRIBUTE_LIST`
+   for any record, run lists, folder indexes walked in B-tree order (loops detected), streams with sparse
+   runs, the uninitialized tail, NTFS compression units, Compact OS (WOF) chunk tables, `$UpCase`, label.
+2. `src/ntfs/fs.ts`: `NtfsFS` (a `SnapshotFS`): case-insensitive lookup that returns stored names, hidden
+   metafiles, caches for records, folders, streams and paths; registers itself with `DiskFS`.
+3. `src/ntfs/lznt1.ts`, `src/ntfs/xpress.ts`: decompressors (MS-XCA for Xpress Huffman).
+4. Tests (`test/ntfs.test.ts`, generator `test/helpers/ntfs-fixture.ts`): resident, contiguous,
+   fragmented, sparse, compressed, attribute-list, WOF 4K/8K/16K, LZX refusal, ADS, hard link, a
+   150-file folder spread over INDX blocks, walking, NTFS inside a disk-image `.tib` (browse, extract),
+   and NTFS in an MBR partition.
+5. Bug found by the tests, in the test compressor: it reserved the next 16-bit word of the Xpress bit
+   stream when 16 bits were written, but the decoder reads it only after using more than 16, so extra
+   length bytes landed in the wrong place. The decoder (following MS-XCA) was right.
+6. Limits: the reader and the test generator come from the same understanding of NTFS; an image made by
+   Windows would be a stronger check. FAT/exFAT volumes are shown as raw images only.
+- Tests: 101 pass.
+
+
+2026-10-29: Phase 3, .tibx
+--------------------------
+1. Format notes in `Format-Tibx.md`, with the assumptions listed separately.
+2. `src/tibx/`: `crc32c.ts` (slicing-by-8; checked against the standard "123456789" value), `lz4.ts`
+   (blocks and dictionary chains), `pages.ts` (one global page space over several files, CRC on every
+   read), `header.ts` (newest ARCH header, 19 slots, superblocks, meta strings), `lsm.ts` (trees and
+   merge), `archive.ts` (`TibxArchive`, backup points with ancestry, segment cache, `TibxImage` built
+   from extents with newer points overlaid on older ones).
+3. Encrypted archives fail at open (first segment's key id), not on the first read.
+4. acronis-tib-reader's own code disagrees with itself on merge order (ctrees first, then mem-tree, with
+   "first wins" for segments); we treat the mem-tree as newest, the usual LSM rule. With unique keys
+   (segment ids, extent ids) the order doesn't matter.
+5. `engines` raised to Node 22.15 (Zstandard in `node:zlib`); CI's "22" already resolves to a newer 22.x.
+6. Tests (`test/tibx.test.ts`, fixture `test/helpers/tibx-fixture.ts`, LZ4 compressor in
+   `test/helpers/compressors.ts`): single file with an old header at page 0 and the newest at the end,
+   hidden metadata streams, raw and LZ4 tree pages, multi-level trees, shared segments, three-point
+   incremental chain, split archive opened from either file (and a missing data file), damaged page,
+   encrypted archive, deleted backup point in the mem-tree.
+7. Fixture lesson: split files must reserve their header pages inside the global page space while pages
+   are laid out; appending them afterwards shifted every page reference.
+- Tests: 109 pass.
+
+
+2026-10-29: Phase 4, experimental encryption
+--------------------------------------------
+1. The maintainer chose "build it, mark experimental" for encryption without real encrypted samples.
+2. `.tibx`: acronis-tib-reader's notes are concrete here (decompiled): key records in header slot 7,
+   PBKDF2-HMAC-SHA256 (16-byte salt, 2^10-2^24 iterations) unwrapping the data key with AES-256-CBC,
+   "SE" segments with a stored IV (+ tag for GCM). Implemented in `src/tibx/encryption.ts` with
+   `node:crypto` only. The format has no password check, so each candidate key is confirmed by
+   decrypting and decompressing the first segment.
+3. `openArchive(file, { password })`, `tib --password` / `TIB_PASSWORD`; new error code
+   `wrong-password`. Every successful open warns that decryption is experimental.
+4. `.tib` encryption deliberately left unsupported: the notes leave its framing unconfirmed; a guessed
+   decryptor would fail on real files in ways that look like damage (fail fast instead).
+5. Tests: AES-128/256 in CBC and GCM, missing password, wrong password, certificate-only records,
+   archives with encrypted segments but no key records.
+- Tests: 113 pass.
+
+
+2026-10-29: write support
+-------------------------
+1. Agreed scope: new backups (`tib create`), edited copies (`tib edit`, always a new file), writable
+   mounts with changes in a separate folder (`--writable`), and image export (`tib export`).
+2. `src/write/writer.ts`: streams a Windows file backup to `<name>.partial` and renames it at the end
+   (a cancel or error leaves nothing behind). Same layout the reader and its fixture use; fields the
+   reader doesn't need are written as documented guesses (`Format-Windows.md`, "Writing").
+3. `src/write/sources.ts`: entries from local folders (parents first, symlinks skipped), from any backup
+   view (drive letters kept for Windows file backups; other formats go on a chosen drive), and `--add`.
+4. `src/write/overlay.ts`: `OverlayFS`. New/changed files in `upper/` with reversible, Windows-safe names;
+   deletions and links to local files in `overlay.json` (written atomically). A deleted folder created
+   again starts empty. Changing a backup file copies it up first.
+5. WebDAV handles PUT/DELETE/MKCOL/MOVE/COPY/PROPPATCH when serving an overlay (403 otherwise, as before);
+   locks are granted for names that don't exist yet. rclone mounts writable with `--vfs-cache-mode writes`.
+6. `src/write/export.ts`: raw or fixed-VHD export (footer and CHS geometry per Microsoft's VHD
+   specification; checksum checked in the tests); a bare volume gets an MBR at 1 MiB so Windows can
+   attach it.
+7. CLI: `create`, `edit` (refuses to write over a file of the backup it reads), `export`,
+   `mount --writable`, `--level`, `--as-drive`.
+8. Not tested here: whether True Image opens the new backups; a writable drive with Explorer and Office.
+- Tests: 122 pass (new `test/write.test.ts`).
+
+
+2026-10-29: desktop app follow-up and wrap-up
+---------------------------------------------
+1. The app didn't compile once `archive.format` could be 'tibx'. Added a shared `BackupFormat` type in
+   `gui/src/shared/api.ts` used by every component that took `'Windows' | 'Mac'`.
+2. The app opens `.tibx` (open dialog, drag and drop, command line, installer file association) and
+   explains `wrong-password`. Disk-image backups open in the app through the same `DiskFS` view (volume
+   folders and `.img` files) with no app changes.
+3. Not done in the app: a password prompt and the write features (TODO section 11).
+4. Checks: library 122 tests; app typecheck; app e2e 17 passed, 1 skipped (real backup not connected).
+5. State of the tib-reader plan: Phases 0-4 done (4 experimental and `.tibx` only), plus write support.
+   Everything new is tested only on generated files; real samples are next step 1 in `TODO.md`.

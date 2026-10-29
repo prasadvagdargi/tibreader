@@ -11,24 +11,23 @@ Legend: `[x]` done, `[ ]` to do, `[~]` partly done / blocked (reason given)
 
 Next steps (in priority order)
 ------------------------------
-1. **Record index kind 0x0007** (file recorded without data, read as zeros): find out what it means,
+1. **Real samples for the new formats** (everything in sections 10 and 12 is tested on generated files
+   only): a disk backup of a small USB stick with current True Image (`.tibx`), an encrypted one, any old
+   sector-by-sector `.tib`, an NTFS image made by Windows. Run `TIB_SAMPLE=<file> npm test` and
+   `tib verify` on each; fix what breaks; update `Format-Sector.md`, `Format-Tibx.md`.
+2. **Does True Image open backups made by `tib create` / `tib edit`?** Needs a machine with True Image.
+3. **Alternate data streams on the real backup**: find a downloaded file (with `Zone.Identifier`),
+   compare `tib cat` with the original, decode the RecordIndex tail.
+4. **Record index kind 0x0007** (file recorded without data, read as zeros): find out what it means,
    ideally by backing up a known file that triggers it. See `Format-Windows.md`.
-2. **Quick wins from tib-reader** (Phase 0 of `Plan-tib-reader.md`): recognize `.tibx` and the other known
-   variants with clear errors, stop sending True Image 2010-2013 files to the Mac parser, check alternate
-   data streams on the real backup, doc fixes.
-3. **More real samples**: an incremental chain, a backup split into several files, an encrypted one, a
-   sector-by-sector `.tib` and a `.tibx` (True Image for Windows), plus any Mac backup. Run
-   `TIB_SAMPLE=<file> npm test` and `tib verify` on each, then fix what breaks and record findings in the
-   format notes.
-4. **Disk images, NTFS and `.tibx`**: Phases 1-3 of `Plan-tib-reader.md`. No longer blocked on samples:
-   acronis-tib-reader documents these formats from real files, so work can start against synthetic
-   fixtures.
-5. **Native FUSE / `--drive` on Linux and macOS**: test `tib mount --fuse` (with `@cocalc/fuse-native`)
+5. **Desktop app**: password prompt for encrypted `.tibx`, and the write features (create, edit, writable
+   mount, export) in the UI. Section 11.
+6. **Writable `--drive` by hand**: Explorer and Office saving, renaming and deleting on a mounted backup.
+7. **Native FUSE / `--drive` on Linux and macOS**: test `tib mount --fuse` (with `@cocalc/fuse-native`)
    and `tib mount --drive <folder>` (with rclone + FUSE).
-6. **Windows attributes in mounts**: show hidden/system flags and creation times (needs a per-entry
+8. **Windows attributes in mounts**: show hidden/system flags and creation times (needs a per-entry
    metadata read, so cache it).
-7. **Synthetic Mac fixture** following `Format-Mac.md`, so the Mac parser has end-to-end tests.
-8. **Desktop app** (Windows first): milestones in section 11, plan in `Plan-desktop-app.md`.
+9. **Synthetic Mac fixture** following `Format-Mac.md`, so the Mac parser has end-to-end tests.
 
 
 1. Bugs found in review
@@ -127,12 +126,65 @@ Next steps (in priority order)
 
 10. Formats from acronis-tib-reader
 -----------------------------------
-Details, sizes and order in `Plan-tib-reader.md`.
-- [ ] Phase 0: quick wins (variant detection, ADS check, doc fixes, browser downloads on Windows)
-- [ ] Phase 1: sector-by-sector `.tib` as a raw partition image (modern and legacy chunk maps)
-- [ ] Phase 2: NTFS reader (with `$ATTRIBUTE_LIST`, LZNT1, WOF/Xpress) and MBR/GPT partitions
-- [ ] Phase 3: `.tibx` (pages, LSM trees, Zstd segments, split files, backup chain)
-- [ ] Phase 4: encryption, only once real encrypted samples exist
+Details, sizes and order in `Plan-tib-reader.md`. Work on the `more-formats` branch (from `desktop-app`).
+- [x] Phase 0: quick wins
+  - [x] `detectFormat()`: `.tib` (Windows/Mac), `.tibx` (archive and data files), True Image 2010-2013,
+        old file-backup containers v1/v2, tape; each refused with a message naming it
+  - [x] True Image 2010-2013 files no longer reach the Mac parser
+  - [x] `tib info` names the format even when the file can't be opened; `archive.format`, `archive.files()`,
+        `slice.kind` ('files' / 'disk') for every format
+  - [x] WebDAV folder page shows sizes and dates; README: browser downloads have no 50 MB limit
+  - [x] `Format-Windows.md`: header ids, listing fields, trailer record count, 2016 sample, ADS lead
+  - [~] Alternate data streams on the real backup: blocked, the 55 GB backup isn't connected to this machine
+  - [~] The 4 bytes after raw-deflate records: same (needs the real backup)
+- [x] Phase 1: sector-by-sector `.tib` as raw images (`src/sector/`, `src/disk/`, notes in `Format-Sector.md`)
+  - [x] Trailer records, chunk-map locator search, chunk-map decoder (modern), inline chunk maps found by
+        walking the blocks (2014-2016), with a fast path for stored deflate blocks
+  - [x] Index of the walk cached in the user's cache folder (never next to the backup)
+  - [x] `DiskFS`: `Volume.img` / `Disk.img` + `Partition N.img` (MBR with logical partitions, GPT)
+  - [x] Several chunk maps in one backup point -> several volumes; split files; incremental points read
+        unstored blocks from the previous point (an assumption)
+  - [x] Settings from the metainfo XML; encrypted disk images refused; `verify` decompresses every block
+  - [~] MD5 list after the data: not used (its location isn't known exactly)
+  - [~] No real disk-image `.tib` checked yet
+- [x] Phase 2: NTFS reader (`src/ntfs/`) and MBR/GPT partitions (`src/disk/partitions.ts`)
+  - [x] MFT, update sequences, `$ATTRIBUTE_LIST`, run lists (sparse, negative deltas), folder B-trees,
+        `$UpCase`, volume label, hidden metafiles, hard links, alternate data streams (API only)
+  - [x] LZNT1 and Compact OS (Xpress Huffman 4K/8K/16K); LZX and EFS refused with clear errors
+  - [x] Volume folders in `DiskFS` ("Partition 2 (Windows)"); extraction and mounts work through it
+  - [x] Test NTFS image generator (`test/helpers/ntfs-fixture.ts`) and test compressors
+  - [~] Not checked against an NTFS image made by Windows (none on this machine; making one needs admin)
+  - [ ] FAT32/exFAT volumes (only raw `.img` for now)
+- [x] Phase 3: `.tibx` (`src/tibx/`, notes in `Format-Tibx.md`)
+  - [x] Pages with CRC-32C, newest archive header, tree superblocks, LDIR/LEAF pages (raw and chained
+        LZ4), compact and variable cells, mem-trees, newest-wins merge with deletions
+  - [x] `segment_map`, `data_map`, Zstandard segments (Node 22.15+), backup points from `slices`
+        (full/incremental chains), split archives (global page space), streams as `DiskFS` images
+  - [x] Encrypted archives refused at open; page checksums checked on every read
+  - [~] Assumptions without a real sample: incremental overlap rules, shared segments, whole-disk layout
+  - [ ] Single-bit repair with the page CRC (True Image does it; we only report)
+- [x] Phase 4 (experimental, at the maintainer's request): `.tibx` password decryption (`src/tibx/encryption.ts`)
+  - [x] Key records in header slot 7, PBKDF2-HMAC-SHA256 + AES-256-CBC key unwrap, AES-CBC/GCM segments
+  - [x] `openArchive(file, { password })`, `tib --password` / `TIB_PASSWORD`, `wrong-password` error code
+  - [~] Never checked against a backup encrypted by True Image
+  - [ ] Certificate (RSA) users; encrypted tree pages
+  - [~] `.tib` encryption: left unsupported, the notes don't pin the framing down (would be a guess)
+
+
+12. Write support (new files only; existing backups are never modified)
+-----------------------------------------------------------------------
+Requested 2026-10-29. Code in `src/write/`.
+- [x] `tib create` / `writeFileBackup()`: Windows file/folder backups from files on this computer
+- [x] `tib edit` / `writeSnapshotBackup()`: a backup plus changes (`--add`, `--delete`, `--overlay`) into a
+      new file; converts disk images and Mac backups to file backups (`--from`)
+- [x] `OverlayFS`: a writable view whose changes live in a separate folder; `tib mount --writable <dir>`
+      (WebDAV PUT/DELETE/MKCOL/MOVE/COPY/PROPPATCH; rclone with `--vfs-cache-mode writes`)
+- [x] `tib export` / `exportImage()`: disk/partition images to `.img` or fixed `.vhd` (volumes wrapped in a
+      one-partition MBR disk so Windows can attach them)
+- [~] Whether True Image accepts new backups: untested (no True Image here); unknown fields are guesses
+- [ ] Try a writable `--drive` mount by hand with Explorer and Office (save, rename, delete)
+- [ ] Split output into several files (`_v2.tib`...) and incremental backups
+- [ ] FUSE mount writable (`--fuse --writable`)
 
 
 11. Desktop app (Windows first)
@@ -149,6 +201,9 @@ Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
       clipboard/drag/open, clean unmount on quit or crash
 - [x] M5 polish: preview pane, search, Verify dialog, properties with attributes, shortcuts, theme choice,
       recent files, resizable folder pane
+  - [x] Opens `.tibx` (dialog filter, drag and drop, file association); `wrong-password` explained;
+        shared `BackupFormat` type
+  - [ ] Password prompt for encrypted `.tibx`; create/edit/writable mount/export in the UI
   - [ ] Real Windows file-type icons (`app.getFileIcon` needs a file on disk; Fluent icons for now)
   - [ ] PDF preview (needs Chromium's PDF viewer in a sandboxed frame)
 - [x] M6 packaging: portable exe, zip, NSIS installer with `.tib` association; single instance; portable data

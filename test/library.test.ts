@@ -140,7 +140,7 @@ describe('error codes', () => {
 			assert.deepEqual(await codeOf(enc), { cls: NotSupportedError, code: 'encrypted' });
 
 			let sbs = writeWindowsBackup(sub('sbs'), standardEntries(), { sectorBySector: true });
-			assert.deepEqual(await codeOf(sbs), { cls: NotSupportedError, code: 'disk-image' });
+			assert.deepEqual(await codeOf(sbs), { cls: FormatError, code: 'damaged' });
 
 			let notTib = path.join(dir, 'notes_full_b1_s1_v1.tib');
 			fs.writeFileSync(notTib, Buffer.alloc(4096, 1));

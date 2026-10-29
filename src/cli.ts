@@ -2,13 +2,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { openArchive, Archive, Slice, FsEntry } from './index';
+import { openArchive, Archive, Slice, FsEntry, OpenOptions } from './index';
 import { extract, measure } from './fs/extract';
 import { describeArchive } from './info';
 import { verifyHeaders, verifySnapshot } from './verify';
 import { WebDavServer } from './mount/webdav';
 import { FuseMount } from './mount/fuse';
 import { RcloneMount, normalizeDriveTarget } from './mount/rclone';
+import { detectFormat } from './detect';
+import os from 'node:os';
+import { OverlayFS } from './write/overlay';
+import { backupFileName, writeFileBackup } from './write/writer';
+import { addLocalToOverlay, localEntries, writeSnapshotBackup } from './write/sources';
+import { exportImage } from './write/export';
 
 
 const USAGE = `Usage: tib <command> <backup file> [options]
@@ -19,10 +25,16 @@ Commands:
   cat     <backup> <path>               Write one file to standard output
   extract <backup> <destination> [path] Copy files out of the backup (default: everything)
   verify  <backup>                      Check the backup can be read; checks every data block
-  mount   <backup>                      Serve the backup as a read-only drive (see below)
+  mount   <backup>                      Serve the backup as a drive (see below)
+  create  <new.tib> <file or folder>... Make a new file/folder backup of files on this computer
+  edit    <backup> <new.tib>            Write a NEW backup: this one with changes (--add, --delete,
+                                        --overlay); also converts disk images and Mac backups (--from)
+  export  <backup> <image> <out>        Write a disk/partition image out, e.g. '/Partition 2.img'
+                                        to out.img (raw) or out.vhd (Windows can attach it)
 
-<backup> is any file of the backup: NAME_full_b1_s1_v1.tib (Windows) or NAME.tib (Mac).
-Backup files are only ever read.
+<backup> is any file of the backup: NAME_full_b1_s1_v1.tib (Windows), NAME.tib (Mac) or NAME.tibx.
+Existing backup files are only ever read; create, edit and export write new files.
+New backups are read by this tool; whether True Image accepts them is not known.
 
 Options:
   -s, --slice <n>     Backup point to use: 1 is the oldest, -1 (default) the newest
@@ -37,6 +49,15 @@ Options:
   -p, --port <n>      mount: WebDAV port (default 8642; a free port with --drive)
       --host <addr>   mount: address to listen on (default 127.0.0.1, this computer only)
       --fuse <dir>    mount: use native FUSE at <dir> instead of WebDAV (Linux/macOS, optional package)
+      --password <p>  Password of an encrypted .tibx backup (experimental; or set TIB_PASSWORD)
+  -w, --writable <dir> mount: accept changes, keeping them in <dir> (the backup isn't changed);
+                      'tib edit <backup> <new.tib> --overlay <dir>' turns them into a new backup
+      --add <local=path>  edit: add a file or folder from this computer at a path in the backup
+      --delete <path> edit: leave this file or folder out (repeatable, like --add)
+      --overlay <dir> edit: apply the changes kept by 'mount --writable <dir>'
+      --from <path>   edit: only take this folder of the backup, e.g. '/Volume (Windows)'
+      --as-drive <X>  create, edit: drive letter for files without one (default C)
+      --level <0-9>   create, edit: compression level (default 6)
       --debug         Show stack traces on errors
   -h, --help          Show this help
   -v, --version       Show the version
@@ -65,6 +86,14 @@ const OPTIONS = {
 	host: { type: 'string' },
 	fuse: { type: 'string' },
 	drive: { type: 'string', short: 'd' },
+	password: { type: 'string' },
+	writable: { type: 'string', short: 'w' },
+	add: { type: 'string', multiple: true },
+	delete: { type: 'string', multiple: true },
+	overlay: { type: 'string' },
+	from: { type: 'string' },
+	'as-drive': { type: 'string' },
+	level: { type: 'string' },
 	debug: { type: 'boolean' },
 	help: { type: 'boolean', short: 'h' },
 	version: { type: 'boolean', short: 'v' },
@@ -72,7 +101,8 @@ const OPTIONS = {
 
 type Options = {
 	slice?: string; long?: boolean; recursive?: boolean; json?: boolean; overwrite?: boolean; quick?: boolean;
-	quiet?: boolean; port?: string; host?: string; fuse?: string; drive?: string; debug?: boolean; help?: boolean; version?: boolean;
+	quiet?: boolean; port?: string; host?: string; fuse?: string; drive?: string; password?: string;
+	writable?: string; add?: string[]; delete?: string[]; overlay?: string; from?: string; 'as-drive'?: string; level?: string; debug?: boolean; help?: boolean; version?: boolean;
 };
 
 
@@ -116,12 +146,18 @@ function pickSlice(archive: Archive, opts: Options): Slice {
 	return archive.getSlice(parseIntOption(opts.slice, 'slice', -1));
 }
 
-async function withArchive<T>(file: string | undefined, fn: (a: Archive) => Promise<T>): Promise<T> {
+/** Open options from the command line; the password can also come from TIB_PASSWORD */
+function openOptions(opts: Options): OpenOptions {
+	let password = opts.password ?? process.env.TIB_PASSWORD;
+	return password !== undefined ? { password } : {};
+}
+
+async function withArchive<T>(file: string | undefined, opts: Options, fn: (a: Archive) => Promise<T>): Promise<T> {
 	if(!file) {
 		throw new UsageError('Missing the backup file');
 	}
 
-	let archive = await openArchive(file);
+	let archive = await openArchive(file, openOptions(opts));
 	try {
 		return await fn(archive);
 	}
@@ -131,7 +167,15 @@ async function withArchive<T>(file: string | undefined, fn: (a: Archive) => Prom
 }
 
 async function cmdInfo(args: string[], opts: Options) {
-	await withArchive(args[0], async (archive) => {
+	// Say what the file is, even when it can't be opened
+	if(args[0] && fs.existsSync(args[0])) {
+		let detected = await detectFormat(args[0]);
+		if(detected.kind !== 'tib' && detected.kind !== 'tibx') {
+			out('Format:        ' + detected.description);
+		}
+	}
+
+	await withArchive(args[0], opts, async (archive) => {
 		let info = await describeArchive(archive);
 		let { format, volumes, slices } = info;
 
@@ -148,7 +192,7 @@ async function cmdInfo(args: string[], opts: Options) {
 
 		out('Backup points: ' + slices.length);
 		for(let s of slices) {
-			out('  #' + s.number + '  ' + formatDate(new Date(s.created)) + '  ' + (s.incremental ? 'incremental' : 'full') + '  id ' + s.id);
+			out('  #' + s.number + '  ' + formatDate(new Date(s.created)) + '  ' + (s.incremental ? 'incremental' : 'full') + (s.kind === 'disk' ? ' disk image' : '') + '  id ' + s.id);
 
 			let c = s.config;
 			if(c.productinfo) {
@@ -184,7 +228,7 @@ function lsLine(e: FsEntry, name: string, long?: boolean) {
 }
 
 async function cmdLs(args: string[], opts: Options) {
-	await withArchive(args[0], async (archive) => {
+	await withArchive(args[0], opts, async (archive) => {
 		let snapshot = await pickSlice(archive, opts).openFileSystem();
 		let target = args[1] || '/';
 
@@ -222,7 +266,7 @@ async function cmdCat(args: string[], opts: Options) {
 		throw new UsageError('Missing the path of the file inside the backup');
 	}
 
-	await withArchive(args[0], async (archive) => {
+	await withArchive(args[0], opts, async (archive) => {
 		let snapshot = await pickSlice(archive, opts).openFileSystem();
 		let e = await snapshot.stat(args[1]);
 		if(!e) {
@@ -248,7 +292,7 @@ async function cmdExtract(args: string[], opts: Options) {
 		throw new UsageError('Missing the destination folder');
 	}
 
-	await withArchive(args[0], async (archive) => {
+	await withArchive(args[0], opts, async (archive) => {
 		let snapshot = await pickSlice(archive, opts).openFileSystem();
 		let started = Date.now();
 
@@ -268,7 +312,7 @@ async function cmdExtract(args: string[], opts: Options) {
 
 
 async function cmdVerify(args: string[], opts: Options) {
-	return withArchive(args[0], async (archive) => {
+	return withArchive(args[0], opts, async (archive) => {
 		let problems = 0;
 		let unstored = 0;
 
@@ -313,6 +357,102 @@ async function cmdVerify(args: string[], opts: Options) {
 }
 
 
+function compressionLevel(opts: Options): number | undefined {
+	let level = opts.level === undefined ? undefined : parseIntOption(opts.level, 'level', 6);
+	if(level !== undefined && (level < 0 || level > 9)) {
+		throw new UsageError('--level must be 0 to 9');
+	}
+	return level;
+}
+
+function progressPrinter(opts: Options) {
+	let last = 0;
+	return (p: { files: number; bytes: number; path: string }) => {
+		if(!opts.quiet && Date.now() - last > 2000) {
+			last = Date.now();
+			err('  ' + p.files.toLocaleString('en-US') + ' files, ' + formatSize(p.bytes) + '  ' + p.path);
+		}
+	};
+}
+
+async function cmdCreate(args: string[], opts: Options) {
+	if(args.length < 2) {
+		throw new UsageError('Usage: tib create <new.tib> <file or folder>...');
+	}
+	let started = Date.now();
+	let result = await writeFileBackup(args[0], localEntries(args.slice(1), opts['as-drive']), {
+		overwrite: opts.overwrite,
+		compressionLevel: compressionLevel(opts),
+		onProgress: progressPrinter(opts),
+	});
+	out('Created ' + result.file + ': ' + result.files.toLocaleString('en-US') + ' files, ' + result.folders.toLocaleString('en-US') + ' folders, ' + formatSize(result.bytes) + ' in ' + ((Date.now() - started) / 1000).toFixed(1) + ' s');
+}
+
+async function cmdEdit(args: string[], opts: Options) {
+	if(args.length < 2) {
+		throw new UsageError('Usage: tib edit <backup> <new.tib> [--add local=path] [--delete path] [--overlay dir] [--from path]');
+	}
+	await withArchive(args[0], opts, async (archive) => {
+		// Never write over a file of the backup being read
+		let output = path.resolve(backupFileName(args[1]));
+		if((await archive.files()).some((f) => path.resolve(f.fileName).toLowerCase() === output.toLowerCase())) {
+			throw new Error('The new backup would replace a file of the backup being edited; choose another name');
+		}
+
+		let snapshot = await pickSlice(archive, opts).openFileSystem();
+		let tempDir = opts.overlay ? null : await fs.promises.mkdtemp(path.join(os.tmpdir(), 'tib-edit-'));
+		try {
+			let overlay = await OverlayFS.open(snapshot, opts.overlay || tempDir!);
+			for(let p of opts.delete || []) {
+				await overlay.remove(p);
+			}
+			for(let spec of opts.add || []) {
+				let at = spec.indexOf('=');
+				if(at <= 0) {
+					throw new UsageError('--add needs local=path, e.g. --add "C:\\new.txt=/C/Users/me/new.txt"');
+				}
+				await addLocalToOverlay(overlay, spec.slice(0, at), spec.slice(at + 1));
+			}
+
+			let started = Date.now();
+			let result = await writeSnapshotBackup(overlay, args[1], {
+				from: opts.from,
+				drive: opts['as-drive'],
+				overwrite: opts.overwrite,
+				compressionLevel: compressionLevel(opts),
+				onProgress: progressPrinter(opts),
+			});
+			out('Created ' + result.file + ': ' + result.files.toLocaleString('en-US') + ' files, ' + result.folders.toLocaleString('en-US') + ' folders, ' + formatSize(result.bytes) + ' in ' + ((Date.now() - started) / 1000).toFixed(1) + ' s');
+		}
+		finally {
+			if(tempDir) {
+				await fs.promises.rm(tempDir, { recursive: true, force: true });
+			}
+		}
+	});
+}
+
+async function cmdExport(args: string[], opts: Options) {
+	if(args.length < 3) {
+		throw new UsageError('Usage: tib export <backup> <image in the backup> <out.img|out.vhd>');
+	}
+	await withArchive(args[0], opts, async (archive) => {
+		let snapshot = await pickSlice(archive, opts).openFileSystem();
+		let last = 0;
+		let result = await exportImage(snapshot, args[1], args[2], {
+			overwrite: opts.overwrite,
+			onProgress: (p) => {
+				if(!opts.quiet && Date.now() - last > 2000) {
+					last = Date.now();
+					err('  ' + formatSize(p.bytes) + ' / ' + formatSize(p.totalBytes));
+				}
+			}
+		});
+		out('Exported ' + formatSize(result.bytes) + ' to ' + path.resolve(result.file));
+	});
+}
+
+
 function isLoopback(host: string) {
 	return host === '127.0.0.1' || host === '::1' || host === 'localhost';
 }
@@ -322,7 +462,7 @@ async function cmdMount(args: string[], opts: Options) {
 		throw new UsageError('Missing the backup file');
 	}
 
-	let archive = await openArchive(args[0]);
+	let archive = await openArchive(args[0], openOptions(opts));
 	let stop: () => Promise<void>;
 
 	try {
@@ -330,6 +470,13 @@ async function cmdMount(args: string[], opts: Options) {
 
 		if(opts.fuse && opts.drive) {
 			throw new UsageError('Use either --fuse or --drive, not both');
+		}
+		if(opts.writable) {
+			if(opts.fuse) {
+				throw new UsageError('--writable works with WebDAV and --drive, not --fuse');
+			}
+			snapshot = await OverlayFS.open(snapshot, opts.writable);
+			out('Changes are kept in ' + path.resolve(opts.writable) + '; the backup itself is not changed.');
 		}
 
 		if(opts.fuse) {
@@ -345,7 +492,7 @@ async function cmdMount(args: string[], opts: Options) {
 			let addr = await server.listen(parseIntOption(opts.port, 'port', 0), '127.0.0.1');
 
 			let target = normalizeDriveTarget(opts.drive);
-			let drive = new RcloneMount('http://127.0.0.1:' + addr.port + server.basePath, target, archive.name);
+			let drive = new RcloneMount('http://127.0.0.1:' + addr.port + server.basePath, target, archive.name, !!opts.writable);
 			try {
 				await drive.mount();
 			}
@@ -354,7 +501,7 @@ async function cmdMount(args: string[], opts: Options) {
 				throw e;
 			}
 
-			out('Mounted the backup read-only as ' + target + '. Press Ctrl+C to unmount.');
+			out('Mounted the backup ' + (opts.writable ? 'writable' : 'read-only') + ' as ' + target + '. Press Ctrl+C to unmount.');
 			stop = async () => {
 				await drive.unmount();
 				await server.close();
@@ -371,7 +518,7 @@ async function cmdMount(args: string[], opts: Options) {
 			let addr = await server.listen(port, host);
 			let url = 'http://' + (addr.family === 'IPv6' ? '[' + addr.address + ']' : addr.address) + ':' + addr.port + '/';
 
-			out('Serving the backup read-only at ' + url);
+			out('Serving the backup ' + (opts.writable ? 'writable' : 'read-only') + ' at ' + url);
 			if(process.platform === 'win32') {
 				out('Open it as a drive:  net use Z: ' + url + ' /persistent:no');
 				out('                     (or File Explorer > This PC > Map network drive > ' + url + ')');
@@ -468,6 +615,9 @@ export async function main(argv: string[]): Promise<number> {
 			case 'extract': await cmdExtract(args, opts); return 0;
 			case 'verify': return await cmdVerify(args, opts);
 			case 'mount': await cmdMount(args, opts); return 0;
+			case 'create': await cmdCreate(args, opts); return 0;
+			case 'edit': await cmdEdit(args, opts); return 0;
+			case 'export': await cmdExport(args, opts); return 0;
 			default:
 				throw new UsageError('Unknown command: ' + command);
 		}

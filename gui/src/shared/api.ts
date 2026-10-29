@@ -46,7 +46,7 @@ export interface BackupInfo {
 	/** The file that was opened */
 	file: string;
 	name: string;
-	format: 'Windows' | 'Mac';
+	format: BackupFormat;
 	volumes: Array<{ file: string; size: number; headerChecksumOk: boolean }>;
 	/** Oldest first */
 	slices: SliceInfo[];
@@ -62,8 +62,11 @@ export interface Contents {
  * Error codes: the library's (see src/errors.ts) plus 'not-found' (the file is gone), 'io' (couldn't
  * read or write a file), 'engine' (the backup process stopped) and 'internal'
  */
+/** Windows and Mac .tib backups, or .tibx (True Image 2020+) */
+export type BackupFormat = 'Windows' | 'Mac' | 'tibx';
+
 export type ErrorCode =
-	'not-a-backup' | 'unexpected-name' | 'missing-part' | 'damaged' | 'encrypted' | 'disk-image' | 'unsupported' |
+	'not-a-backup' | 'unexpected-name' | 'missing-part' | 'damaged' | 'encrypted' | 'wrong-password' | 'disk-image' | 'unsupported' |
 	'not-found' | 'io' | 'no-space' | 'cancelled' | 'not-allowed' | 'engine' | 'internal';
 
 export interface ErrorInfo {

@@ -36,7 +36,7 @@ const useStyles = makeStyles({
 	},
 });
 
-const BACKUP_FILE = /\.tib(\.metadata)?$/i;
+const BACKUP_FILE = /\.tibx?(\.metadata)?$/i;
 
 
 export function App() {
@@ -147,7 +147,7 @@ export function App() {
 
 			let files = Array.from(e.dataTransfer!.files).map((f) => tib.pathForFile(f)).filter((p) => BACKUP_FILE.test(p));
 			if(files.length === 0) {
-				setDropError('That isn\'t a backup file. Drop a .tib file made by Acronis True Image.');
+				setDropError('That isn\'t a backup file. Drop a .tib or .tibx file made by Acronis True Image.');
 				return;
 			}
 			openFile(files[0]);

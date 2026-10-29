@@ -14,6 +14,7 @@ export interface ProductInfo {
 
 export interface SliceConfig {
 	machine_id?: string; /**< Known in windows as a 'computer_id' */
+	computer_name?: string; /**< Name of the backed-up computer (.tibx) */
 
 	// Mainly present on Mac backups
 	// NOTE: For full-disk backups, these may not be present
@@ -28,6 +29,9 @@ export interface SliceConfig {
 }
 
 
+/** 'files' for file and folder backups, 'disk' for disk and partition images */
+export type SliceKind = 'files' | 'disk';
+
 /**
  * One backup point in time. Full backups have no parent; incremental ones build on their parent.
  *
@@ -40,6 +44,11 @@ abstract class Slice {
 
 	public abstract get id(): Buffer;
 	public abstract get creationTime(): Date;
+
+	/** What the backup point holds: files and folders, or a disk/partition image */
+	public get kind(): SliceKind {
+		return 'files';
+	}
 
 	// TODO: Also verify that the xml configuration matches the sniffed settings (include paths, compression, encryption)
 	public abstract get config(): SliceConfig;

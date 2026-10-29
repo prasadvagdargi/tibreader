@@ -1,11 +1,31 @@
 import fs from 'node:fs';
 import Volume, { VolumeVersion } from './volume';
 import Slice from './slice';
-import { NotSupportedError } from './errors';
+import { FormatError, NotSupportedError } from './errors';
+import { detectFormat, FormatKind } from './detect';
 
 
 type ArchiveGenerator = (initialVolume: Volume) => Promise<Archive>;
 const ArchiveImpls: { [v: number]: ArchiveGenerator } = {};
+
+export interface OpenOptions {
+	/** Password for encrypted backups (experimental; .tibx only) */
+	password?: string;
+}
+
+/** Opens formats that don't start with a .tib volume header (e.g. .tibx) */
+type FileArchiveGenerator = (fileName: string, options: OpenOptions) => Promise<Archive>;
+const FileImpls: { [kind: string]: FileArchiveGenerator } = {};
+
+export type ArchiveFormat = 'Windows' | 'Mac' | 'tibx';
+
+/** One file on disk that belongs to a backup */
+export interface ArchiveFile {
+	fileName: string;
+	size: number;
+	/** Whether the file's own header checksum matched (true when the format has none) */
+	headerChecksumOk: boolean;
+}
 
 
 /**
@@ -19,13 +39,30 @@ export default abstract class Archive {
 	 * NOTE: Formats register themselves when imported. Import from the package root ('tibreader'),
 	 * which loads both the Mac and Windows formats.
 	 */
-	static async Open(fileName: string): Promise<Archive> {
+	static async Open(fileName: string, options: OpenOptions = {}): Promise<Archive> {
 
 		// Normalize in case the name of a Mac metadata file was given
 		fileName = fileName.replace(/\.tib\.metadata$/i, '.tib');
 
 		if(!fs.existsSync(fileName)) {
 			throw new Error('File not found: ' + fileName);
+		}
+
+		let detected = await detectFormat(fileName);
+		if(detected.kind !== 'tib') {
+			let open = FileImpls[detected.kind];
+			if(open) {
+				return open(fileName, options);
+			}
+
+			if(detected.kind === 'unknown') {
+				throw new FormatError('Not a .tib or .tibx file (unknown format)', 'not-a-backup');
+			}
+
+			let advice = detected.kind === 'tib-very-old'
+				? ' True Image 2018 and later convert these files when they open them; after that, this library can read them.'
+				: '';
+			throw new NotSupportedError('This is a ' + detected.description + ', which can\'t be read yet.' + advice);
 		}
 
 		let initialVolume = await Volume.Open(fileName);
@@ -56,6 +93,31 @@ export default abstract class Archive {
 		}
 
 		ArchiveImpls[v] = fn;
+	}
+
+	/**
+	 * Registers an opener for a format recognized by detectFormat() that has no .tib volume header
+	 */
+	public static AddFileType(kind: FormatKind, fn: FileArchiveGenerator) {
+		if(FileImpls[kind]) {
+			throw new Error('Duplicate implementation of archive format: ' + kind);
+		}
+
+		FileImpls[kind] = fn;
+	}
+
+	/** Which format family this backup uses */
+	get format(): ArchiveFormat {
+		return this.volumes[0] && this.volumes[0].header.version === VolumeVersion.Mac ? 'Mac' : 'Windows';
+	}
+
+	/** The files on disk that make up this backup */
+	async files(): Promise<ArchiveFile[]> {
+		return Promise.all(this.volumes.map(async (v) => ({
+			fileName: v.fileName,
+			size: await v.reader.length(),
+			headerChecksumOk: v.header.checkSumValid
+		})));
 	}
 
 	private _closed = false;

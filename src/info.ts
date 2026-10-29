@@ -1,13 +1,12 @@
-import Archive from './archive';
-import Slice, { SliceConfig } from './slice';
-import { VolumeVersion } from './volume';
+import Archive, { ArchiveFormat } from './archive';
+import Slice, { SliceConfig, SliceKind } from './slice';
 import { SnapshotFS } from './fs/types';
 import { measure } from './fs/extract';
 
 
 export interface ArchiveDescription {
 	name: string;
-	format: 'Windows' | 'Mac';
+	format: ArchiveFormat;
 	volumes: Array<{ file: string; size: number; headerChecksumOk: boolean }>;
 	slices: SliceDescription[];
 }
@@ -20,6 +19,8 @@ export interface SliceDescription {
 	/** ISO 8601 */
 	created: string;
 	incremental: boolean;
+	/** 'files' for file and folder backups, 'disk' for disk and partition images */
+	kind: SliceKind;
 	config: SliceConfig;
 	/** Only when asked for: what the backup point holds */
 	contents?: { files: number; folders: number; bytes: number };
@@ -36,14 +37,14 @@ export interface DescribeOptions {
  * Plain-data summary of a backup (what 'tib info --json' prints): its files, backup points and settings
  */
 export async function describeArchive(archive: Archive, opts: DescribeOptions = {}): Promise<ArchiveDescription> {
-	let format: 'Windows' | 'Mac' = archive.volumes[0].header.version === VolumeVersion.Windows ? 'Windows' : 'Mac';
+	let format = archive.format;
 	let openFs = opts.openFileSystem || ((s: Slice) => s.openFileSystem());
 
-	let volumes = await Promise.all(archive.volumes.map(async (v) => ({
-		file: v.fileName,
-		size: await v.reader.length(),
-		headerChecksumOk: v.header.checkSumValid
-	})));
+	let volumes = (await archive.files()).map((f) => ({
+		file: f.fileName,
+		size: f.size,
+		headerChecksumOk: f.headerChecksumOk
+	}));
 
 	let slices: SliceDescription[] = [];
 	for(let i = 0; i < archive.slices.length; i++) {
@@ -53,6 +54,7 @@ export async function describeArchive(archive: Archive, opts: DescribeOptions = 
 			id: s.id.toString('hex'),
 			created: s.creationTime.toISOString(),
 			incremental: s.parent !== null,
+			kind: s.kind,
 			config: s.config,
 		};
 

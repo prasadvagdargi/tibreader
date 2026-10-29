@@ -157,13 +157,13 @@ export function Welcome(props: { onOpen: (file: string) => void; dragging: boole
 						<Archive48Regular className={s.heroIcon} />
 						<div className={s.heroText}>
 							<Title2>Open an Acronis backup</Title2>
-							<Text className={s.muted}>Browse a True Image backup (.tib) and copy your files out.</Text>
+							<Text className={s.muted}>Browse a True Image backup (.tib or .tibx) and copy your files out.</Text>
 						</div>
 					</div>
 
 					<div className={mergeClasses(s.drop, props.dragging && s.dropActive)}>
 						<ArrowUpload24Regular className={s.dropIcon} />
-						<Subtitle2>Drop a .tib file here</Subtitle2>
+						<Subtitle2>Drop a .tib or .tibx file here</Subtitle2>
 						<Text className={s.muted}>or</Text>
 						<Button appearance="primary" size="large" icon={<FolderOpen20Regular />} onClick={pick}>
 							Open backup...

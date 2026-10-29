@@ -3,7 +3,7 @@ import {
 	Button, Caption1, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, makeStyles,
 	MessageBar, MessageBarBody, MessageBarTitle, ProgressBar, Text, tokens,
 } from '@fluentui/react-components';
-import type { JobProgress, VerifyReport } from '../../../shared/api';
+import type { BackupFormat, JobProgress, VerifyReport } from '../../../shared/api';
 import { call, errorCode, errorMessage, tib } from '../api';
 import { formatCount, formatDate, formatSize, plural } from '../format';
 import { originalPath } from './DetailsPane';
@@ -48,7 +48,7 @@ export function VerifyDialog(props: {
 	sessionId: string;
 	slice: number;
 	sliceCreated: string;
-	format: 'Windows' | 'Mac';
+	format: BackupFormat;
 	onClose: () => void;
 }) {
 	let s = useStyles();

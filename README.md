@@ -2,7 +2,8 @@ tibreader
 =========
 
 **Acronis True Image backup reader.** Read, verify, extract and mount Acronis True Image backup files
-(`.tib` and `.tib.metadata`) without True Image. Backup files are only ever opened read-only.
+(`.tib`, `.tib.metadata` and `.tibx`) without True Image. Existing backup files are only ever opened
+read-only; it can also write new file backups, edited copies of backups, and disk images.
 
 The format is undocumented; everything here is reverse-engineered. See `doc/` for the format notes,
 the work log and the to-do list.
@@ -17,14 +18,15 @@ Status
 | Windows, split over several `.tib` files | Yes | Yes | Yes | No sample yet (covered by generated test files) |
 | Windows, incremental chain | Should work | Should work | Should work | No sample yet |
 | Mac (all versions) | Should work | Should work | Should work | No (original samples are gone) |
-| Windows sector-by-sector (disk image) | No: clear "not supported" error | | | |
-| Encrypted backups | Windows: clear "not supported" error. Mac: not detected | | | |
-| Windows True Image 2014 and older | Unknown | | | |
+| `.tibx` disk images, True Image 2020 and later (single or split files, incremental chains) | Yes: NTFS volumes as folders, plus raw `.img` files | Yes | Yes (page checksums, every segment) | No sample yet (generated test files, following acronis-tib-reader's notes from real files) |
+| Windows sector-by-sector (disk image), True Image 2014-2019 | Yes: NTFS volumes as folders, plus each disk and partition as a raw `.img` file | Yes (NTFS compression and Compact OS included) | Yes (every block's checksum) | No sample yet (generated test files, following acronis-tib-reader's notes from real files) |
+| Encrypted backups | `.tibx` with a password: **experimental** (`--password`), written from decompilation notes, never tried on a real encrypted backup. `.tib`: clear "not supported" error. Mac: not detected | | | |
+| Windows True Image 2010-2013 `.tib`, old file-backup containers, tape | No: recognized, clear "not supported" error | | | |
 
 
 Requirements
 ------------
-- Node.js 22 or newer
+- Node.js 22.15 or newer (`.tibx` backups need its built-in Zstandard)
 
 
 Install and build
@@ -109,7 +111,9 @@ net use Z: http://127.0.0.1:8642/ /persistent:no
 Remove it when done with `net use Z: /delete`.
 
 Windows' WebDAV client refuses files larger than 50 MB by default ("The file size exceeds the limit
-allowed"). Use `--drive` above, `tib extract` for big files, or raise the limit to the maximum (4 GB)
+allowed"). The limit is only in that client: opening `http://127.0.0.1:8642/` in a web browser shows
+each folder with sizes and dates, and downloads files of any size. Otherwise use `--drive` above,
+`tib extract` for big files, or raise the limit to the maximum (4 GB)
 from an administrator terminal and restart the WebClient service:
 ```bash
 reg add HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters /v FileSizeLimitInBytes /t REG_DWORD /d 4294967295 /f
@@ -191,6 +195,39 @@ npm run dev
 `npm run test:e2e` builds the app and drives it with Playwright on synthetic backups. With
 `TIB_SAMPLE` set, it also opens that real backup (read-only). The mount tests need WinFsp and rclone,
 and the packaged-app test needs `npm run dist` first; otherwise they're skipped.
+
+
+Writing: new backups, edited copies, images
+-------------------------------------------
+Existing backup files are never changed. Every command here writes **new** files.
+
+```bash
+tib create "D:/Backups/Photos.tib" "C:/Users/me/Pictures"
+```
+Makes a Windows file/folder backup (`Photos_full_b1_s1_v1.tib`) of files and folders on this computer.
+
+```bash
+tib edit "D:/Backups/Old_full_b1_s1_v1.tib" "D:/Backups/Fixed.tib" --delete /C/Users/me/secret.txt --add "C:/new.txt=/C/Users/me/new.txt"
+```
+Writes a new backup: the old one with files left out (`--delete`) and files or folders added from this
+computer (`--add local=path`). It also converts: `tib edit disk.tibx Files.tib --from "/Volume (Windows)"`
+turns the files of a disk image (or a Mac backup) into a file backup.
+
+```bash
+tib mount "D:/Backups/Old_full_b1_s1_v1.tib" --drive R: --writable "D:/Backups/changes"
+```
+Mounts the backup so programs can change it. Changes go to the `changes` folder; the backup stays as it
+was. `tib edit <backup> <new.tib> --overlay "D:/Backups/changes"` then writes a new backup with them.
+
+```bash
+tib export "D:/Backups/Disk.tibx" "/Volume.img" "D:/Disk.vhd"
+```
+Writes a disk or partition image out as raw bytes (`.img`) or as a fixed VHD (`.vhd`). Windows can
+attach a VHD (Disk Management > Action > Attach VHD) and show its files; a single volume is put inside a
+one-partition disk for that.
+
+New backups open in this tool. **Whether True Image accepts them hasn't been tested** (some fields of
+the format are unknown and written as guesses; see `doc/Format-Windows.md`, "Writing").
 
 
 Library usage
@@ -287,3 +324,7 @@ MIT (see `LICENSE`).
 Maintained by [prasadvagdargi](https://github.com/prasadvagdargi). Based on
 [dennisss/acronis-tib](https://github.com/dennisss/acronis-tib) by Dennis Shtatnov (2018), whose
 original history is kept in this repository.
+
+What this reader knows about sector-by-sector `.tib`, `.tibx` and their encryption comes from the
+reverse-engineering notes of [acronis-tib-reader](https://github.com/TreadingTheTiber/acronis-tib-reader)
+(MIT, the tibread contributors). The code here was written from those notes, not copied.
