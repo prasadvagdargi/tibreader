@@ -1,5 +1,8 @@
-# Packaging for Windows: an installer, a single portable .exe and a zip (see doc/Plan-desktop-app.md).
-# Build with: npm run dist   (needs: npm run fetch-rclone)
+# Packaging (see doc/Plan-desktop-app.md):
+#   Windows: an installer, a single portable .exe and a zip
+#   macOS:   .dmg and .zip for Intel and Apple Silicon (not signed: right-click > Open the first time)
+#   Linux:   AppImage and .tar.gz
+# Build on each OS with: npm run dist   (fetches the matching rclone first)
 appId: io.github.prasadvagdargi.tibreader
 productName: TibReader
 copyright: Copyright © 2026 prasadvagdargi. MIT license.
@@ -16,10 +19,11 @@ files:
 
 # rclone (MIT) ships next to the app, outside the asar archive, so it can run
 extraResources:
-  - from: vendor/rclone
+  - from: vendor/rclone/${os}-${arch}
     to: rclone
     filter:
       - rclone.exe
+      - rclone
       - LICENSE.txt
   - from: ../LICENSE
     to: LICENSE.txt
@@ -38,7 +42,30 @@ win:
     - target: zip
       arch: [x64]
 
-# Double-clicking a .tib opens it in TibReader (installer only)
+mac:
+  icon: build/icon.png
+  category: public.app-category.utilities
+  # No Apple developer certificate: build unsigned instead of failing
+  identity: null
+  artifactName: TibReader-${version}-mac-${arch}.${ext}
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+
+linux:
+  icon: build/icon.png
+  category: Utility
+  synopsis: Read and restore Acronis True Image backups
+  artifactName: TibReader-${version}-linux-${arch}.${ext}
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: tar.gz
+      arch: [x64]
+
+# Double-clicking a .tib opens it in TibReader (Windows installer, macOS, Linux desktop entry)
 fileAssociations:
   - ext: tib
     name: AcronisTrueImageBackup

@@ -256,9 +256,11 @@ function engineEnv(): NodeJS.ProcessEnv {
 	let env: NodeJS.ProcessEnv = { ...process.env, TIBREADER_MAIN_PID: String(process.pid) };
 
 	// Prefer the rclone that ships with the app (see electron-builder.yml); fall back to an installed one
+	let program = process.platform === 'win32' ? 'rclone.exe' : 'rclone';
+	let osName = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
 	let bundled = app.isPackaged
-		? path.join(process.resourcesPath, 'rclone', 'rclone.exe')
-		: path.join(app.getAppPath(), 'vendor', 'rclone', 'rclone.exe');
+		? path.join(process.resourcesPath, 'rclone', program)
+		: path.join(app.getAppPath(), 'vendor', 'rclone', osName + '-' + process.arch, program);
 	if(fs.existsSync(bundled)) {
 		env.TIB_RCLONE = bundled;
 	}
