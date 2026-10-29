@@ -155,7 +155,14 @@ Details, sizes and order in `Plan-tib-reader.md`. Work on the `more-formats` bra
   - [x] Test NTFS image generator (`test/helpers/ntfs-fixture.ts`) and test compressors
   - [~] Not checked against an NTFS image made by Windows (none on this machine; making one needs admin)
   - [ ] FAT32/exFAT volumes (only raw `.img` for now)
-- [ ] Phase 3: `.tibx` (pages, LSM trees, Zstd segments, split files, backup chain)
+- [x] Phase 3: `.tibx` (`src/tibx/`, notes in `Format-Tibx.md`)
+  - [x] Pages with CRC-32C, newest archive header, tree superblocks, LDIR/LEAF pages (raw and chained
+        LZ4), compact and variable cells, mem-trees, newest-wins merge with deletions
+  - [x] `segment_map`, `data_map`, Zstandard segments (Node 22.15+), backup points from `slices`
+        (full/incremental chains), split archives (global page space), streams as `DiskFS` images
+  - [x] Encrypted archives refused at open; page checksums checked on every read
+  - [~] Assumptions without a real sample: incremental overlap rules, shared segments, whole-disk layout
+  - [ ] Single-bit repair with the page CRC (True Image does it; we only report)
 - [ ] Phase 4: encryption, only once real encrypted samples exist
 
 

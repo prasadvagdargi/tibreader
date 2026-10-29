@@ -60,6 +60,71 @@ export function lznt1Compress(data: Buffer): Buffer {
 
 
 /**
+ * One LZ4 block, greedy matcher. 'history' (bytes before 'data') may be referenced by matches, the way
+ * .tibx chains blocks.
+ */
+export function lz4CompressBlock(data: Buffer, history: Buffer = Buffer.alloc(0)): Buffer {
+	let all = Buffer.concat([ history, data ]);
+	let start = history.length;
+	let out: number[] = [];
+	let literalStart = start;
+	let position = start;
+	let lastMatchStart = all.length - 12;  // LZ4 rule: no match starts in the last 12 bytes
+	let writeLength = (n: number) => {
+		while(n >= 255) {
+			out.push(255);
+			n -= 255;
+		}
+		out.push(n);
+	};
+	let emit = (literalEnd: number, matchOffset: number, matchLength: number) => {
+		let literalCount = literalEnd - literalStart;
+		let token = (Math.min(literalCount, 15) << 4) | (matchLength ? Math.min(matchLength - 4, 15) : 0);
+		out.push(token);
+		if(literalCount >= 15) {
+			writeLength(literalCount - 15);
+		}
+		for(let i = literalStart; i < literalEnd; i++) {
+			out.push(all[i]);
+		}
+		if(matchLength) {
+			out.push(matchOffset & 0xff, matchOffset >> 8);
+			if(matchLength - 4 >= 15) {
+				writeLength(matchLength - 4 - 15);
+			}
+		}
+	};
+
+	while(position < lastMatchStart) {
+		let bestLength = 0;
+		let bestOffset = 0;
+		for(let offset = 1; offset <= Math.min(position, 65535); offset++) {
+			let length = 0;
+			while(position + length < all.length - 5 && all[position + length] === all[position + length - offset]) {
+				length++;
+			}
+			if(length > bestLength) {
+				bestLength = length;
+				bestOffset = offset;
+			}
+			if(bestLength > 64) {
+				break;
+			}
+		}
+		if(bestLength >= 4) {
+			emit(position, bestOffset, bestLength);
+			position += bestLength;
+			literalStart = position;
+		}
+		else {
+			position++;
+		}
+	}
+	emit(all.length, 0, 0);
+	return Buffer.from(out);
+}
+
+/**
  * Xpress Huffman (MS-XCA 2.2) with every symbol given a 9-bit code (a complete, valid code), greedy
  * matcher. The bit stream layout follows MS-XCA's encoder: 16-bit words go into reserved slots, while
  * extra length bytes are written straight to the output, which is how the decoder expects to find them.

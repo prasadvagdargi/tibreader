@@ -10,7 +10,7 @@
 		"tib": "dist/cli.js"
 	},
 	"engines": {
-		"node": ">=22"
+		"node": ">=22.15"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",

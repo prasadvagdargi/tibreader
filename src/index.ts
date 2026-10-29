@@ -8,6 +8,7 @@ import Archive from './archive';
 // Each format registers itself with Archive/Volume when loaded
 import './mac/index';
 import './win/index';
+import './tibx/archive';
 // File systems inside disk images
 import './ntfs/fs';
 

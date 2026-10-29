@@ -436,3 +436,26 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 6. Limits: the reader and the test generator come from the same understanding of NTFS; an image made by
    Windows would be a stronger check. FAT/exFAT volumes are shown as raw images only.
 - Tests: 101 pass.
+
+
+2026-10-29: Phase 3, .tibx
+--------------------------
+1. Format notes in `Format-Tibx.md`, with the assumptions listed separately.
+2. `src/tibx/`: `crc32c.ts` (slicing-by-8; checked against the standard "123456789" value), `lz4.ts`
+   (blocks and dictionary chains), `pages.ts` (one global page space over several files, CRC on every
+   read), `header.ts` (newest ARCH header, 19 slots, superblocks, meta strings), `lsm.ts` (trees and
+   merge), `archive.ts` (`TibxArchive`, backup points with ancestry, segment cache, `TibxImage` built
+   from extents with newer points overlaid on older ones).
+3. Encrypted archives fail at open (first segment's key id), not on the first read.
+4. acronis-tib-reader's own code disagrees with itself on merge order (ctrees first, then mem-tree, with
+   "first wins" for segments); we treat the mem-tree as newest, the usual LSM rule. With unique keys
+   (segment ids, extent ids) the order doesn't matter.
+5. `engines` raised to Node 22.15 (Zstandard in `node:zlib`); CI's "22" already resolves to a newer 22.x.
+6. Tests (`test/tibx.test.ts`, fixture `test/helpers/tibx-fixture.ts`, LZ4 compressor in
+   `test/helpers/compressors.ts`): single file with an old header at page 0 and the newest at the end,
+   hidden metadata streams, raw and LZ4 tree pages, multi-level trees, shared segments, three-point
+   incremental chain, split archive opened from either file (and a missing data file), damaged page,
+   encrypted archive, deleted backup point in the mem-tree.
+7. Fixture lesson: split files must reserve their header pages inside the global page space while pages
+   are laid out; appending them afterwards shifted every page reference.
+- Tests: 109 pass.
