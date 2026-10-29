@@ -530,3 +530,6 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    then one job creating the draft release with every file.
 5. Checked here: the Windows packages build with the new rclone layout and the packaged-app test passes.
    macOS and Linux builds are only checked by the workflow.
+6. First all-OS release run: macOS packaging failed ("Icon must be at least 512x512", ours was 256).
+   `npm run icon` now renders 512x512. Rendering 1024 here gave a stretched, cut-off icon (the offscreen
+   window is limited by the screen), so the script now refuses to write a capture that isn't square.
