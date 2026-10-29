@@ -235,14 +235,22 @@ export class WebDavServer {
 		let kids = await this._fs.list(entry.path) || [];
 		let base = hrefFor(entry, this._base);
 		let rows = kids.map((k) => {
-			let name = escapeXml(k.name) + (k.type === 'directory' ? '/' : '');
-			return '<li><a href="' + escapeXml(base + encodeURIComponent(k.name) + (k.type === 'directory' ? '/' : '')) + '">' + name + '</a></li>';
+			let isDir = k.type === 'directory';
+			let name = escapeXml(k.name) + (isDir ? '/' : '');
+			let href = escapeXml(base + encodeURIComponent(k.name) + (isDir ? '/' : ''));
+			return '<tr><td><a href="' + href + '"' + (isDir ? '' : ' download') + '>' + name + '</a></td>' +
+				'<td class="n">' + (isDir ? '' : formatBytes(k.size)) + '</td>' +
+				'<td>' + escapeXml(k.mtime.toISOString().slice(0, 16).replace('T', ' ')) + '</td></tr>';
 		});
 
-		let body = '<!doctype html><meta charset="utf-8"><title>' + escapeXml(entry.path) + '</title>' +
-			'<h1>' + escapeXml(entry.path) + '</h1><ul>' +
-			(entry.path !== '/' ? '<li><a href="../">../</a></li>' : '') +
-			rows.join('') + '</ul>';
+		let body = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">' +
+			'<title>' + escapeXml(entry.path) + '</title>' +
+			'<style>body{font:14px system-ui,sans-serif;margin:16px}table{border-collapse:collapse}' +
+			'td,th{padding:3px 14px 3px 0;text-align:left}.n{text-align:right}</style>' +
+			'<h1>' + escapeXml(entry.path) + '</h1>' +
+			'<table><tr><th>Name</th><th class="n">Size</th><th>Modified (UTC)</th></tr>' +
+			(entry.path !== '/' ? '<tr><td><a href="../">../</a></td><td></td><td></td></tr>' : '') +
+			rows.join('') + '</table>';
 
 		res.statusCode = 200;
 		res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -292,6 +300,17 @@ function send(res: http.ServerResponse, status: number, text?: string) {
 		res.setHeader('Content-Length', 0);
 		res.end();
 	}
+}
+
+function formatBytes(n: number) {
+	let units = [ 'B', 'KB', 'MB', 'GB', 'TB' ];
+	let i = 0;
+	let v = n;
+	while(v >= 1024 && i < units.length - 1) {
+		v /= 1024;
+		i++;
+	}
+	return (i === 0 ? String(v) : v.toFixed(1)) + ' ' + units[i];
 }
 
 function escapeXml(s: string) {

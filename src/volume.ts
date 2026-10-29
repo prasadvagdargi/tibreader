@@ -85,6 +85,11 @@ export default abstract class Volume {
 		let headerLength = headerBlock.readUInt16LE(4);
 		let version = headerBlock.readUInt16LE(6); // < 01 is Mac, 00 is windows
 
+		// True Image 2010-2013 Windows files also say version 1, but have the shorter Windows header
+		if(version === 1 && headerLength === 0x20) {
+			throw new NotSupportedError('This is a .tib from True Image 2010-2013, which can\'t be read yet');
+		}
+
 		if(headerLength < 0x20 || headerLength > HEADER_READ_SIZE) {
 			throw new FormatError('Unexpected volume header length: ' + headerLength);
 		}

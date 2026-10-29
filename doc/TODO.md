@@ -13,9 +13,8 @@ Next steps (in priority order)
 ------------------------------
 1. **Record index kind 0x0007** (file recorded without data, read as zeros): find out what it means,
    ideally by backing up a known file that triggers it. See `Format-Windows.md`.
-2. **Quick wins from tib-reader** (Phase 0 of `Plan-tib-reader.md`): recognize `.tibx` and the other known
-   variants with clear errors, stop sending True Image 2010-2013 files to the Mac parser, check alternate
-   data streams on the real backup, doc fixes.
+2. **Alternate data streams on the real backup** (left over from Phase 0 of `Plan-tib-reader.md`): find a
+   downloaded file (with `Zone.Identifier`), compare `tib cat` with the original, decode the RecordIndex tail.
 3. **More real samples**: an incremental chain, a backup split into several files, an encrypted one, a
    sector-by-sector `.tib` and a `.tibx` (True Image for Windows), plus any Mac backup. Run
    `TIB_SAMPLE=<file> npm test` and `tib verify` on each, then fix what breaks and record findings in the
@@ -127,8 +126,17 @@ Next steps (in priority order)
 
 10. Formats from acronis-tib-reader
 -----------------------------------
-Details, sizes and order in `Plan-tib-reader.md`.
-- [ ] Phase 0: quick wins (variant detection, ADS check, doc fixes, browser downloads on Windows)
+Details, sizes and order in `Plan-tib-reader.md`. Work on the `more-formats` branch (from `desktop-app`).
+- [x] Phase 0: quick wins
+  - [x] `detectFormat()`: `.tib` (Windows/Mac), `.tibx` (archive and data files), True Image 2010-2013,
+        old file-backup containers v1/v2, tape; each refused with a message naming it
+  - [x] True Image 2010-2013 files no longer reach the Mac parser
+  - [x] `tib info` names the format even when the file can't be opened; `archive.format`, `archive.files()`,
+        `slice.kind` ('files' / 'disk') for every format
+  - [x] WebDAV folder page shows sizes and dates; README: browser downloads have no 50 MB limit
+  - [x] `Format-Windows.md`: header ids, listing fields, trailer record count, 2016 sample, ADS lead
+  - [~] Alternate data streams on the real backup: blocked, the 55 GB backup isn't connected to this machine
+  - [~] The 4 bytes after raw-deflate records: same (needs the real backup)
 - [ ] Phase 1: sector-by-sector `.tib` as a raw partition image (modern and legacy chunk maps)
 - [ ] Phase 2: NTFS reader (with `$ATTRIBUTE_LIST`, LZNT1, WOF/Xpress) and MBR/GPT partitions
 - [ ] Phase 3: `.tibx` (pages, LSM trees, Zstd segments, split files, backup chain)

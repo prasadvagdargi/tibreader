@@ -10,8 +10,11 @@ import './mac/index';
 import './win/index';
 
 export { Archive };
+export type { ArchiveFormat, ArchiveFile } from './archive';
+export { detectFormat, detectFromBytes } from './detect';
+export type { DetectedFormat, FormatKind } from './detect';
 export { default as Slice } from './slice';
-export type { SliceConfig, ProductInfo } from './slice';
+export type { SliceConfig, ProductInfo, SliceKind } from './slice';
 export { default as Volume, VolumeVersion } from './volume';
 export type { VolumeHeader } from './volume';
 export type { FsEntry, SnapshotFS, EntryType } from './fs/types';

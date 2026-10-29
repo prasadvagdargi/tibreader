@@ -344,3 +344,33 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
      full verify).
    - Searching for a file the library picked finds it in about a second.
    - Copy to writes the same bytes and modified time as the library reads (`G:\$TXRAJNL.DAT`, 1 MB).
+
+
+2026-10-29: more formats and write support, Phase 0 (quick wins)
+----------------------------------------------------------------
+- Request from the maintainer: implement every phase of `Plan-tib-reader.md` and add write support.
+  Asked what "write" should mean, since the desktop app plan said backups stay read-only. Answer: all of
+  - `tib create`: new file/folder backups from files on disk
+  - editing a backup, always into a NEW file (the original is never modified)
+  - a writable mount whose changes go to a separate folder (overlay)
+  - export/convert (disk images to `.img`/`.vhd`)
+  Encryption ships as experimental (no real encrypted sample). Work on `more-formats`, branched from
+  `desktop-app` so the app gets the new formats.
+- No real backup is connected to this machine now (only C:), there is no WSL distribution and no admin
+  rights. So every new format is tested against synthetic files written by our own fixture writers;
+  NTFS images will come from a small generator in the tests.
+- Done:
+  1. `src/detect.ts`: `detectFormat()`/`detectFromBytes()` recognize `.tib` (Windows/Mac), `.tibx`
+     (archive page with `ARCH`, or a `-NNNN` data file), True Image 2010-2013, old file-backup containers
+     (`8F5C36C6`, `44686EB4`) and tape. `Archive.Open` uses it first; unsupported kinds get a
+     `NotSupportedError` naming them. `Archive.AddFileType()` registers formats without a `.tib` header.
+  2. Version 1 with a 32-byte header no longer goes to the Mac parser.
+  3. `archive.format`, `archive.files()` and `slice.kind` ('files' / 'disk') so `describeArchive` and the
+     app can describe formats that have no `.tib` volumes.
+  4. `tib info` prints the detected format even when it can't open the file.
+  5. WebDAV folder page: a table with sizes and dates, files as downloads. README says browsers have no
+     50 MB limit.
+  6. `Format-Windows.md`: header ids, listing fields, trailer record count, True Image 2016 sample and
+     the alternate-data-stream lead.
+- Blocked: the alternate data stream check and the raw-deflate check value need the real backup.
+- Tests: 79 pass (new `test/detect.test.ts`).

@@ -9,6 +9,7 @@ import { verifyHeaders, verifySnapshot } from './verify';
 import { WebDavServer } from './mount/webdav';
 import { FuseMount } from './mount/fuse';
 import { RcloneMount, normalizeDriveTarget } from './mount/rclone';
+import { detectFormat } from './detect';
 
 
 const USAGE = `Usage: tib <command> <backup file> [options]
@@ -131,6 +132,14 @@ async function withArchive<T>(file: string | undefined, fn: (a: Archive) => Prom
 }
 
 async function cmdInfo(args: string[], opts: Options) {
+	// Say what the file is, even when it can't be opened
+	if(args[0] && fs.existsSync(args[0])) {
+		let detected = await detectFormat(args[0]);
+		if(detected.kind !== 'tib' && detected.kind !== 'tibx') {
+			out('Format:        ' + detected.description);
+		}
+	}
+
 	await withArchive(args[0], async (archive) => {
 		let info = await describeArchive(archive);
 		let { format, volumes, slices } = info;
@@ -148,7 +157,7 @@ async function cmdInfo(args: string[], opts: Options) {
 
 		out('Backup points: ' + slices.length);
 		for(let s of slices) {
-			out('  #' + s.number + '  ' + formatDate(new Date(s.created)) + '  ' + (s.incremental ? 'incremental' : 'full') + '  id ' + s.id);
+			out('  #' + s.number + '  ' + formatDate(new Date(s.created)) + '  ' + (s.incremental ? 'incremental' : 'full') + (s.kind === 'disk' ? ' disk image' : '') + '  id ' + s.id);
 
 			let c = s.config;
 			if(c.productinfo) {

@@ -19,7 +19,7 @@ Status
 | Mac (all versions) | Should work | Should work | Should work | No (original samples are gone) |
 | Windows sector-by-sector (disk image) | No: clear "not supported" error | | | |
 | Encrypted backups | Windows: clear "not supported" error. Mac: not detected | | | |
-| Windows True Image 2014 and older | Unknown | | | |
+| Windows True Image 2010-2013 `.tib`, old file-backup containers, tape | No: recognized, clear "not supported" error | | | |
 
 
 Requirements
@@ -109,7 +109,9 @@ net use Z: http://127.0.0.1:8642/ /persistent:no
 Remove it when done with `net use Z: /delete`.
 
 Windows' WebDAV client refuses files larger than 50 MB by default ("The file size exceeds the limit
-allowed"). Use `--drive` above, `tib extract` for big files, or raise the limit to the maximum (4 GB)
+allowed"). The limit is only in that client: opening `http://127.0.0.1:8642/` in a web browser shows
+each folder with sizes and dates, and downloads files of any size. Otherwise use `--drive` above,
+`tib extract` for big files, or raise the limit to the maximum (4 GB)
 from an administrator terminal and restart the WebClient service:
 ```bash
 reg add HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters /v FileSizeLimitInBytes /t REG_DWORD /d 4294967295 /f
