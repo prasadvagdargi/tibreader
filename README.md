@@ -17,7 +17,7 @@ Status
 | Windows, split over several `.tib` files | Yes | Yes | Yes | No sample yet (covered by generated test files) |
 | Windows, incremental chain | Should work | Should work | Should work | No sample yet |
 | Mac (all versions) | Should work | Should work | Should work | No (original samples are gone) |
-| Windows sector-by-sector (disk image) | No: clear "not supported" error | | | |
+| Windows sector-by-sector (disk image), True Image 2014-2019 | Yes: each disk and partition as a raw `.img` file | Yes | Yes (every block's checksum) | No sample yet (generated test files, following acronis-tib-reader's notes from real files) |
 | Encrypted backups | Windows: clear "not supported" error. Mac: not detected | | | |
 | Windows True Image 2010-2013 `.tib`, old file-backup containers, tape | No: recognized, clear "not supported" error | | | |
 

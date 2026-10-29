@@ -137,7 +137,16 @@ Details, sizes and order in `Plan-tib-reader.md`. Work on the `more-formats` bra
   - [x] `Format-Windows.md`: header ids, listing fields, trailer record count, 2016 sample, ADS lead
   - [~] Alternate data streams on the real backup: blocked, the 55 GB backup isn't connected to this machine
   - [~] The 4 bytes after raw-deflate records: same (needs the real backup)
-- [ ] Phase 1: sector-by-sector `.tib` as a raw partition image (modern and legacy chunk maps)
+- [x] Phase 1: sector-by-sector `.tib` as raw images (`src/sector/`, `src/disk/`, notes in `Format-Sector.md`)
+  - [x] Trailer records, chunk-map locator search, chunk-map decoder (modern), inline chunk maps found by
+        walking the blocks (2014-2016), with a fast path for stored deflate blocks
+  - [x] Index of the walk cached in the user's cache folder (never next to the backup)
+  - [x] `DiskFS`: `Volume.img` / `Disk.img` + `Partition N.img` (MBR with logical partitions, GPT)
+  - [x] Several chunk maps in one backup point -> several volumes; split files; incremental points read
+        unstored blocks from the previous point (an assumption)
+  - [x] Settings from the metainfo XML; encrypted disk images refused; `verify` decompresses every block
+  - [~] MD5 list after the data: not used (its location isn't known exactly)
+  - [~] No real disk-image `.tib` checked yet
 - [ ] Phase 2: NTFS reader (with `$ATTRIBUTE_LIST`, LZNT1, WOF/Xpress) and MBR/GPT partitions
 - [ ] Phase 3: `.tibx` (pages, LSM trees, Zstd segments, split files, backup chain)
 - [ ] Phase 4: encryption, only once real encrypted samples exist

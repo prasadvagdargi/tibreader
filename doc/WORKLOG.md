@@ -374,3 +374,35 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
      the alternate-data-stream lead.
 - Blocked: the alternate data stream check and the raw-deflate check value need the real backup.
 - Tests: 79 pass (new `test/detect.test.ts`).
+
+
+2026-10-29: Phase 1, sector-by-sector (disk image) .tib
+-------------------------------------------------------
+1. Format knowledge from acronis-tib-reader written up in `Format-Sector.md`, including what is assumed
+   rather than known (incremental points, several chunk maps, encryption detection).
+2. `src/sector/`:
+   - `tlv.ts`: the trailer's tag/length records turn out to be the same grammar as the chunk-map headers
+     (the 41-byte modern / 37-byte legacy trailers decode exactly).
+   - `chunkmap.ts`: decode and encode (column-wise storage, zigzag deltas) without BigInt; 200,000
+     records decode in well under a second.
+   - `open.ts`: trailer, locator search, chunk-map regions (geometry from tags 2/3/4; the 19-byte modern
+     header is exactly tags 2, 3, 4 and a 3-byte tag 6), legacy walk, metainfo XML.
+   - `deflate.ts`: end of a zlib stream from stored-block headers only, so the legacy walk reads ~9 small
+     headers per block instead of decompressing it.
+   - `image.ts`: `SectorImage` (bitmap + popcount, LRU cache, incremental fallback).
+   - `indexcache.ts` + `src/cachedir.ts`: the legacy walk is cached per file (path + size + time) in the
+     user's cache folder, written atomically.
+3. `src/disk/`: `DiskImage`, MBR (with logical partitions) and GPT tables, and `DiskFS`, the view of a
+   disk-image backup point (`Volume.img`, or `Disk.img` + `Partition N.img`; volume folders once a file
+   system reader is registered, Phase 2).
+4. `WindowsSlice` opens disk-image slices instead of refusing them; `slice.kind` is 'disk'.
+   `verifySnapshot` reads each stored image once (every block decompressed and size-checked) and keeps
+   going after damage so every damaged area is reported.
+5. `test/helpers/sector-fixture.ts` writes modern and legacy images (stored/deflate/mixed blocks,
+   out-of-order blocks, unused clusters, split files, several partition images, incremental chains,
+   corrupted blocks, encrypted metainfo).
+6. Bug in the new fixture caught by a test: its pseudo-random generator multiplied past 2^53, so the
+   "random" image was almost all zeros (and tests passed trivially). Fixed with `Math.imul`.
+7. Two older tests expected "disk images are not supported"; that fake disk image (file-backup data with
+   a disk-image trailer) now fails as damaged instead.
+- Tests: 92 pass (new `test/sector.test.ts`).

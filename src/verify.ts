@@ -2,6 +2,49 @@ import Archive from './archive';
 import { SnapshotFS } from './fs/types';
 import { measure } from './fs/extract';
 import { WindowsFS } from './win/fs';
+import { DiskFS } from './disk/fs';
+
+
+/**
+ * Disk images: reads every stored image once from start to end, which decompresses every block and
+ * checks it (zlib checksum, size promised by its cluster bitmap). The files inside volumes come from
+ * the same blocks, so they aren't read again.
+ */
+async function verifyDisk(disk: DiskFS, opts: VerifyOptions): Promise<VerifyResult> {
+	let images = await Promise.all(disk.sourceFiles.map((f) => disk.stat('/' + f)));
+	let totalBytes = images.reduce((s, e) => s + (e ? e.size : 0), 0);
+	let result: VerifyResult = { files: 0, bytes: 0, problems: [], unstored: 0 };
+	const CHUNK = 4 * 1024 * 1024;
+
+	for(let e of images) {
+		if(!e) {
+			continue;
+		}
+		// Keep going after a damaged area, so every damaged part is reported
+		for(let off = 0; off < e.size; off += CHUNK) {
+			opts.signal?.throwIfAborted();
+			try {
+				await disk.read(e.path, off, CHUNK);
+			}
+			catch(ex: any) {
+				if(ex && ex.name === 'AbortError') {
+					throw ex;
+				}
+				let problem = { path: e.path, message: 'At offset ' + off + ': ' + (ex && ex.message ? ex.message : String(ex)) };
+				result.problems.push(problem);
+				opts.onProblem?.(problem);
+			}
+			if(opts.onProgress) {
+				let done = Math.min(e.size, off + CHUNK);
+				opts.onProgress({ files: result.files, bytes: result.bytes + done, totalFiles: images.length, totalBytes, path: e.path });
+			}
+		}
+		result.files++;
+		result.bytes += e.size;
+	}
+
+	return result;
+}
 
 
 export interface VerifyProblem {
@@ -54,6 +97,10 @@ export function verifyHeaders(archive: Archive): VerifyProblem[] {
  * its stored MD5; Mac backups check that every block decompresses.
  */
 export async function verifySnapshot(snapshot: SnapshotFS, opts: VerifyOptions = {}): Promise<VerifyResult> {
+	if(snapshot instanceof DiskFS) {
+		return verifyDisk(snapshot, opts);
+	}
+
 	let totals = opts.totals || await measure(snapshot);
 	let result: VerifyResult = { files: 0, bytes: 0, problems: [], unstored: 0 };
 
