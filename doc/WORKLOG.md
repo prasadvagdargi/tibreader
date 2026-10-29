@@ -24,7 +24,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
   2. an optional native FUSE mount on Linux/macOS through `@cocalc/fuse-native`, loaded only if the user
      installs it, because it has no OS restriction and would try (and fail) to compile on Windows.
 - **Unknown format areas** (sector-by-sector, encryption, Mac owners/permissions) fail with clear
-  `NotSupportedError`s and are documented rather than guessed.
+  
+otSupportedError`s and are documented rather than guessed.
 - **Git.** Work happens on `modernize-and-fixes`, in small commits pushed to `origin` as they land.
   Commits use the GitHub noreply address because the account's email is private (GitHub rejected
   the first push with GH007).
@@ -54,7 +55,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    - extracting `/G/Movies` (546 files) gives exact sizes and modified times; a second run refuses to
      overwrite; `cat` output equals the extracted file
    - WebDAV: OPTIONS, PROPFIND, ranged GET, 416 for bad ranges, 403 for writes, 400 for `..` paths
-   - **Windows drive**: `net use T: http://127.0.0.1:8642/` started the WebClient service and mapped
+   - **Windows drive**: 
+et use T: http://127.0.0.1:8642/` started the WebClient service and mapped
      the backup; Windows listed folders with correct dates and copied a file identical to `cat`
    - Windows' WebDAV client refuses files over 50 MB by default (`FileSizeLimitInBytes` = 50000000 on
      this machine; a 108 MB copy failed). Documented the registry fix and the WinFsp + rclone route;
@@ -62,7 +64,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    - Files were first advertised as read-only; Windows kept that flag on copies, so they're now shown
      with the normal archive attribute (the server still refuses all writes).
    - Drive roots have no stored time; they now show the backup time instead of 1970.
-8. Tests and CI (53 tests, built-in `node:test`, no extra dependencies):
+8. Tests and CI (53 tests, built-in 
+ode:test`, no extra dependencies):
    - `test/helpers/windows-fixture.ts` writes valid synthetic Windows backups from scratch (header
      checksum, blocks with MD5 index, metadata records, config, listing, trailer, footer, optional
      split into volumes). Covers the multi-volume bug, missing volumes, corrupted blocks, encrypted and
@@ -148,7 +151,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    - A cancelled or failed file is removed.
    - An overwrite writes next to the original and renames over it at the end, so cancelling keeps
      the original.
-   - "rename" picks `name (2).ext` like Explorer.
+   - "rename" picks 
+ame (2).ext` like Explorer.
 2. New `extractItems()`, which copies a selection like a file manager (folders included), and `measure()`.
 3. `verifySnapshot()`/`verifyHeaders()` (`src/verify.ts`) and `describeArchive()` (`src/info.ts`), moved
    out of the CLI. `tib info`/`verify` output is unchanged (CLI tests pass).
@@ -169,7 +173,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
      (electron-vite 5 supports up to 7), React 19.3.0, Fluent UI 9.74.9, Playwright 1.64.0.
    - npm 11 holds back install scripts by default. esbuild's script stays unapproved, since its binary
      comes from `@esbuild/win32-x64` anyway.
-   - Electron 44 no longer downloads its binary on install. `node node_modules/electron/install.js` does it
+   - Electron 44 no longer downloads its binary on install. 
+ode node_modules/electron/install.js` does it
      (checked against the checksums shipped in the package); CI runs it too.
    - The install isn't stuck when it seems to be: Fluent's icons are ~60,000 files and take several
      minutes on Windows.
@@ -187,7 +192,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
      lazy folder tree, a virtualized details list with Explorer-style selection, keyboard and typeahead,
      a status bar and the Info panel.
    - Friendly errors by code (encrypted, disk image, missing part, renamed, not a backup, damaged...).
-4. Tests: `npm run test:e2e` (Playwright `_electron`) opens synthetic backups from the library's test helpers.
+4. Tests: 
+pm run test:e2e` (Playwright `_electron`) opens synthetic backups from the library's test helpers.
    It browses, selects, goes Up, opens Info, and shows the encrypted-backup error.
    - Screenshots land in `gui/test-results/`.
    - CI gets a Windows job for the app (typecheck + e2e).
@@ -198,7 +204,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 1. Engine jobs (`copy`, `stage`):
    - built on `extractItems`, with progress events (at most ~10 a second), cancel, and "file already
      there" questions sent to the window. "Do this for all" is remembered per job.
-   - Errors come back as `cancelled` / `no-space` / `io` codes.
+   - Errors come back as `cancelled` / 
+o-space` / `io` codes.
 2. Main (`gui/src/main/files.ts`):
    - A window can only copy into folders picked in a folder dialog (an approved list per window).
    - Temporary copies go to `%TEMP%\TibReader\staging\<random>` and are removed after a day, on a later
@@ -249,7 +256,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
      (Windows asks for permission); without winget it opens winfsp.dev
    - The command bar shows "Drive R:" with Open in File Explorer / Unmount.
 4. rclone is bundled.
-   - `npm run fetch-rclone` downloads rclone 1.75.1 (the tested version) and checks it against the
+   - 
+pm run fetch-rclone` downloads rclone 1.75.1 (the tested version) and checks it against the
      SHA-256 pinned from rclone's signed SHA256SUMS. It keeps only `rclone.exe` plus the MIT notice
      from rclone.org/licence.
    - Its `rclone.exe` is byte-identical to the one winget installed here.
@@ -283,7 +291,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    - Properties: size, modified/created, Windows attributes, and where the item was on the backed-up
      computer. For folders, what they contain. For several items, a total.
    - Previews come through a private `tib-preview://<session>/<backup point>/<path>` protocol.
-     Main forwards Range requests with `net.fetch` to the engine's secret-path WebDAV server.
+     Main forwards Range requests with 
+et.fetch` to the engine's secret-path WebDAV server.
      - It needed `corsEnabled` plus an allow-origin header, because the page's `fetch` (text previews)
        is cross-origin from `file://`.
      - `<img>` and `<video>` worked without that.
@@ -297,9 +306,11 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
      "Copy list".
    - Files stored without data are explained rather than reported as damaged.
 4. More menu: Verify, Theme (same as Windows / light / dark, saved in settings and applied through
-   `nativeTheme.themeSource`), Open another, Close. "Copy original path" (C:\...) in the right-click
+   
+ativeTheme.themeSource`), Open another, Close. "Copy original path" (C:\...) in the right-click
    menu. The folder pane can be resized by mouse or arrow keys and keeps its width.
-5. Light/dark now comes from main (`nativeTheme` plus a `theme-changed` event), not the page's media
+5. Light/dark now comes from main (
+ativeTheme` plus a `theme-changed` event), not the page's media
    query. That's more robust, and testable: Playwright pins pages' `prefers-color-scheme` to light.
 6. Deferred: native Windows file icons and PDF preview (TODO section 11).
 7. Tests: 16 e2e. New: search (text, wildcard, nothing found, Escape); text and image previews and
@@ -310,7 +321,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 ---------------------------------------
 1. Icon:
    - `gui/build/icon.svg` (an archive box on Fluent blue) is the source.
-   - `npm run icon` renders it to `icon.png` with Electron's offscreen capture (no image tools needed).
+   - 
+pm run icon` renders it to `icon.png` with Electron's offscreen capture (no image tools needed).
    - electron-builder makes the .ico.
 2. electron-builder 26.17.0 (pinned, over two weeks old), `gui/electron-builder.yml`. Targets:
    - NSIS installer: per-user, folder choice, Start menu, `.tib` association.
@@ -336,7 +348,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    - The installer was built but not installed here (it would add a Start menu entry and a file
      association); TODO lists it as a manual check.
 5. `.github/workflows/release.yml`: a `v*` tag runs on windows-latest.
-   - It checks that the tag matches `gui/package.json`, then runs all tests, `npm run dist` and the e2e
+   - It checks that the tag matches `gui/package.json`, then runs all tests, 
+pm run dist` and the e2e
      tests (including the packaged app).
    - It creates a **draft** release with the three files using `gh`, with no third-party actions.
 6. On the real 55 GB backup (only read), with `TIB_SAMPLE` set: `gui/test/e2e/real-backup.spec.ts`.
@@ -363,7 +376,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
   1. `src/detect.ts`: `detectFormat()`/`detectFromBytes()` recognize `.tib` (Windows/Mac), `.tibx`
      (archive page with `ARCH`, or a `-NNNN` data file), True Image 2010-2013, old file-backup containers
      (`8F5C36C6`, `44686EB4`) and tape. `Archive.Open` uses it first; unsupported kinds get a
-     `NotSupportedError` naming them. `Archive.AddFileType()` registers formats without a `.tib` header.
+     
+otSupportedError` naming them. `Archive.AddFileType()` registers formats without a `.tib` header.
   2. Version 1 with a 32-byte header no longer goes to the Mac parser.
   3. `archive.format`, `archive.files()` and `slice.kind` ('files' / 'disk') so `describeArchive` and the
      app can describe formats that have no `.tib` volumes.
@@ -423,7 +437,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    followed using the runs known so far), records with update sequences, attributes, `$ATTRIBUTE_LIST`
    for any record, run lists, folder indexes walked in B-tree order (loops detected), streams with sparse
    runs, the uninitialized tail, NTFS compression units, Compact OS (WOF) chunk tables, `$UpCase`, label.
-2. `src/ntfs/fs.ts`: `NtfsFS` (a `SnapshotFS`): case-insensitive lookup that returns stored names, hidden
+2. `src/ntfs/fs.ts`: 
+tfsFS` (a `SnapshotFS`): case-insensitive lookup that returns stored names, hidden
    metafiles, caches for records, folders, streams and paths; registers itself with `DiskFS`.
 3. `src/ntfs/lznt1.ts`, `src/ntfs/xpress.ts`: decompressors (MS-XCA for Xpress Huffman).
 4. Tests (`test/ntfs.test.ts`, generator `test/helpers/ntfs-fixture.ts`): resident, contiguous,
@@ -450,7 +465,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 4. acronis-tib-reader's own code disagrees with itself on merge order (ctrees first, then mem-tree, with
    "first wins" for segments); we treat the mem-tree as newest, the usual LSM rule. With unique keys
    (segment ids, extent ids) the order doesn't matter.
-5. `engines` raised to Node 22.15 (Zstandard in `node:zlib`); CI's "22" already resolves to a newer 22.x.
+5. `engines` raised to Node 22.15 (Zstandard in 
+ode:zlib`); CI's "22" already resolves to a newer 22.x.
 6. Tests (`test/tibx.test.ts`, fixture `test/helpers/tibx-fixture.ts`, LZ4 compressor in
    `test/helpers/compressors.ts`): single file with an old header at page 0 and the newest at the end,
    hidden metadata streams, raw and LZ4 tree pages, multi-level trees, shared segments, three-point
@@ -467,7 +483,8 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 2. `.tibx`: acronis-tib-reader's notes are concrete here (decompiled): key records in header slot 7,
    PBKDF2-HMAC-SHA256 (16-byte salt, 2^10-2^24 iterations) unwrapping the data key with AES-256-CBC,
    "SE" segments with a stored IV (+ tag for GCM). Implemented in `src/tibx/encryption.ts` with
-   `node:crypto` only. The format has no password check, so each candidate key is confirmed by
+   
+ode:crypto` only. The format has no password check, so each candidate key is confirmed by
    decrypting and decompressing the first segment.
 3. `openArchive(file, { password })`, `tib --password` / `TIB_PASSWORD`; new error code
    `wrong-password`. Every successful open warns that decryption is experimental.
@@ -531,9 +548,20 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 5. Checked here: the Windows packages build with the new rclone layout and the packaged-app test passes.
    macOS and Linux builds are only checked by the workflow.
 6. First all-OS release run: macOS packaging failed ("Icon must be at least 512x512", ours was 256).
-   `npm run icon` now renders 512x512. Rendering 1024 here gave a stretched, cut-off icon (the offscreen
+   
+pm run icon` now renders 512x512. Rendering 1024 here gave a stretched, cut-off icon (the offscreen
    window is limited by the screen), so the script now refuses to write a capture that isn't square.
 7. Second run: macOS and Linux built; the Windows packaged-app test failed on the runner. Without
    WinFsp, the mount dialog took over 8 s to finish checking, so the test expected an enabled Mount
    button. It now waits for "Checking..." to end (up to 30 s) before choosing a path. (This test had never
    run on a runner before: CI doesn't package the app.)
+
+
+2026-10-29: download links
+--------------------------
+1. Release files have stable, OS-named names without the version (`TibReader-Windows-Setup.exe`,
+   `TibReader-macOS-arm64.dmg`, `TibReader-Linux-x64.AppImage`, ...), so the README can link to
+   `releases/latest/download/<name>` and the links keep working for every future release.
+2. README starts with a Download table by OS (with how to tell Apple Silicon from Intel, and what to do
+   about the unsigned-app warnings). The repository's website link points to the latest release.
+3. The v0.1.0 release's files were renamed to the new names (GitHub allows renaming assets).

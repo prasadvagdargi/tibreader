@@ -62,14 +62,14 @@ jobs:
         with:
           name: app-${{ runner.os }}
           if-no-files-found: error
+          # Names without the version (README links to releases/latest/download/<name>)
           path: |
-            gui/release/TibReader-Setup-*.exe
-            gui/release/TibReader-*-portable.exe
-            gui/release/TibReader-*-win-x64.zip
-            gui/release/TibReader-*-mac-*.dmg
-            gui/release/TibReader-*-mac-*.zip
-            gui/release/TibReader-*-linux-*.AppImage
-            gui/release/TibReader-*-linux-*.tar.gz
+            gui/release/TibReader-Windows-*.exe
+            gui/release/TibReader-Windows-*.zip
+            gui/release/TibReader-macOS-*.dmg
+            gui/release/TibReader-macOS-*.zip
+            gui/release/TibReader-Linux-*.AppImage
+            gui/release/TibReader-Linux-*.tar.gz
 
   release:
     name: Draft release

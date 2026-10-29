@@ -5,6 +5,29 @@ tibreader
 (`.tib`, `.tib.metadata` and `.tibx`) without True Image. Existing backup files are only ever opened
 read-only; it can also write new file backups, edited copies of backups, and disk images.
 
+
+Download
+--------
+**[Download TibReader](https://github.com/prasadvagdargi/tibreader/releases/latest)**: pick the file for your computer. The links always
+point to the newest release.
+
+| Your computer | Download | Notes |
+|---|---|---|
+| **Windows 10 / 11** | **[TibReader-Windows-Setup.exe](https://github.com/prasadvagdargi/tibreader/releases/latest/download/TibReader-Windows-Setup.exe)** | Recommended. Installs for you only (no administrator needed); double-clicking a `.tib` opens it |
+| Windows, no install | [TibReader-Windows-Portable.exe](https://github.com/prasadvagdargi/tibreader/releases/latest/download/TibReader-Windows-Portable.exe) | One file; run it from anywhere, e.g. a USB stick |
+| Windows, as a folder | [TibReader-Windows-x64.zip](https://github.com/prasadvagdargi/tibreader/releases/latest/download/TibReader-Windows-x64.zip) | Unzip, then run `TibReader.exe` |
+| **Mac with Apple Silicon** (M1, M2, M3, M4...) | **[TibReader-macOS-arm64.dmg](https://github.com/prasadvagdargi/tibreader/releases/latest/download/TibReader-macOS-arm64.dmg)** | Or the [.zip](https://github.com/prasadvagdargi/tibreader/releases/latest/download/TibReader-macOS-arm64.zip) |
+| **Mac with Intel** | **[TibReader-macOS-x64.dmg](https://github.com/prasadvagdargi/tibreader/releases/latest/download/TibReader-macOS-x64.dmg)** | Or the [.zip](https://github.com/prasadvagdargi/tibreader/releases/latest/download/TibReader-macOS-x64.zip) |
+| **Linux** (64-bit PC) | **[TibReader-Linux-x64.AppImage](https://github.com/prasadvagdargi/tibreader/releases/latest/download/TibReader-Linux-x64.AppImage)** | Make it executable, then run it. Or the [.tar.gz](https://github.com/prasadvagdargi/tibreader/releases/latest/download/TibReader-Linux-x64.tar.gz) |
+
+Not sure which Mac you have? Apple menu > **About This Mac**: "Chip: Apple M..." means Apple Silicon,
+"Processor: ... Intel" means Intel.
+
+The files aren't code-signed yet, so the first start shows a warning:
+- **Windows**: "Windows protected your PC": choose **More info**, then **Run anyway**.
+- **macOS**: "can't be opened because Apple cannot check it": right-click the app, choose **Open**, then **Open**.
+- **Linux**: `chmod +x TibReader-Linux-x64.AppImage` once, then run it.
+
 The format is undocumented; everything here is reverse-engineered. See `doc/` for the format notes,
 the work log and the to-do list.
 
@@ -167,19 +190,9 @@ Desktop app (Windows)
 
 The backup itself is never changed. Design notes: `doc/Plan-desktop-app.md`.
 
-**Downloads** (from the GitHub releases page):
-
-| File | What it is |
-|---|---|
-| `TibReader-Setup-<version>.exe` | Windows 10/11 (64-bit) installer (no administrator needed): Start menu entry, and double-clicking a `.tib` opens it |
-| `TibReader-<version>-portable.exe` | Windows, one file, nothing installed; keeps its settings in a `TibReader Data` folder beside it (good for a USB stick). Starts slower: it unpacks itself first |
-| `TibReader-<version>-win-x64.zip` | Windows, the same as a folder: unzip and run `TibReader.exe`; starts instantly; settings beside it too |
-| `TibReader-<version>-mac-arm64.dmg` / `-mac-x64.dmg` | macOS, Apple Silicon / Intel (`.zip` versions too) |
-| `TibReader-<version>-linux-x86_64.AppImage` | Linux: make it executable and run it (`.tar.gz` too) |
-
-None of the files are code-signed yet:
-- **Windows SmartScreen** may say "Windows protected your PC": choose **More info**, then **Run anyway**.
-- **macOS** says the app can't be checked: right-click it, choose **Open**, then **Open** again (once).
+**Downloads**: see [Download](#download) at the top. The portable `.exe` and the Windows `.zip` keep their
+settings in a `TibReader Data` folder beside the program; the portable `.exe` starts slower because it
+unpacks itself first.
 
 The app was made and tested on Windows. The macOS and Linux builds are built and their library tests run
 on GitHub, but the app hasn't been tried by hand there yet. Mounting as a drive there needs macFUSE
