@@ -406,3 +406,33 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 7. Two older tests expected "disk images are not supported"; that fake disk image (file-backup data with
    a disk-image trailer) now fails as damaged instead.
 - Tests: 92 pass (new `test/sector.test.ts`).
+
+
+2026-10-29: CLAUDE.md
+---------------------
+- The maintainer asked for engineering principles in `CLAUDE.md` (YAGNI, DRY after the second
+  duplication, fail fast, simple first, delete aggressively, long self-explanatory names), plus the
+  project's conventions (read-only backups, branch/commit/push, notes kept in step).
+- Applied right away: the LZNT1 compressor moved out of the library into `test/helpers/compressors.ts`
+  (only tests need it), and the new decompressors use descriptive names.
+
+
+2026-10-29: Phase 2, NTFS
+-------------------------
+1. `src/ntfs/volume.ts`: boot sector, MFT (which describes itself; an MFT with an `$ATTRIBUTE_LIST` is
+   followed using the runs known so far), records with update sequences, attributes, `$ATTRIBUTE_LIST`
+   for any record, run lists, folder indexes walked in B-tree order (loops detected), streams with sparse
+   runs, the uninitialized tail, NTFS compression units, Compact OS (WOF) chunk tables, `$UpCase`, label.
+2. `src/ntfs/fs.ts`: `NtfsFS` (a `SnapshotFS`): case-insensitive lookup that returns stored names, hidden
+   metafiles, caches for records, folders, streams and paths; registers itself with `DiskFS`.
+3. `src/ntfs/lznt1.ts`, `src/ntfs/xpress.ts`: decompressors (MS-XCA for Xpress Huffman).
+4. Tests (`test/ntfs.test.ts`, generator `test/helpers/ntfs-fixture.ts`): resident, contiguous,
+   fragmented, sparse, compressed, attribute-list, WOF 4K/8K/16K, LZX refusal, ADS, hard link, a
+   150-file folder spread over INDX blocks, walking, NTFS inside a disk-image `.tib` (browse, extract),
+   and NTFS in an MBR partition.
+5. Bug found by the tests, in the test compressor: it reserved the next 16-bit word of the Xpress bit
+   stream when 16 bits were written, but the decoder reads it only after using more than 16, so extra
+   length bytes landed in the wrong place. The decoder (following MS-XCA) was right.
+6. Limits: the reader and the test generator come from the same understanding of NTFS; an image made by
+   Windows would be a stronger check. FAT/exFAT volumes are shown as raw images only.
+- Tests: 101 pass.

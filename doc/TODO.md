@@ -147,7 +147,14 @@ Details, sizes and order in `Plan-tib-reader.md`. Work on the `more-formats` bra
   - [x] Settings from the metainfo XML; encrypted disk images refused; `verify` decompresses every block
   - [~] MD5 list after the data: not used (its location isn't known exactly)
   - [~] No real disk-image `.tib` checked yet
-- [ ] Phase 2: NTFS reader (with `$ATTRIBUTE_LIST`, LZNT1, WOF/Xpress) and MBR/GPT partitions
+- [x] Phase 2: NTFS reader (`src/ntfs/`) and MBR/GPT partitions (`src/disk/partitions.ts`)
+  - [x] MFT, update sequences, `$ATTRIBUTE_LIST`, run lists (sparse, negative deltas), folder B-trees,
+        `$UpCase`, volume label, hidden metafiles, hard links, alternate data streams (API only)
+  - [x] LZNT1 and Compact OS (Xpress Huffman 4K/8K/16K); LZX and EFS refused with clear errors
+  - [x] Volume folders in `DiskFS` ("Partition 2 (Windows)"); extraction and mounts work through it
+  - [x] Test NTFS image generator (`test/helpers/ntfs-fixture.ts`) and test compressors
+  - [~] Not checked against an NTFS image made by Windows (none on this machine; making one needs admin)
+  - [ ] FAT32/exFAT volumes (only raw `.img` for now)
 - [ ] Phase 3: `.tibx` (pages, LSM trees, Zstd segments, split files, backup chain)
 - [ ] Phase 4: encryption, only once real encrypted samples exist
 

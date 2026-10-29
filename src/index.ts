@@ -8,6 +8,8 @@ import Archive from './archive';
 // Each format registers itself with Archive/Volume when loaded
 import './mac/index';
 import './win/index';
+// File systems inside disk images
+import './ntfs/fs';
 
 export { Archive };
 export type { ArchiveFormat, ArchiveFile } from './archive';
@@ -20,6 +22,11 @@ export type { VolumeHeader } from './volume';
 export type { FsEntry, SnapshotFS, EntryType } from './fs/types';
 export { WindowsFS } from './win/fs';
 export { MacFS } from './mac/fs';
+export { DiskFS } from './disk/fs';
+export type { DiskVolumeInfo } from './disk/fs';
+export type { DiskImage } from './disk/image';
+export type { Partition, PartitionTable } from './disk/partitions';
+export { NtfsFS } from './ntfs/fs';
 export { FormatError, NotSupportedError } from './errors';
 export type { ErrorCode } from './errors';
 export { setWarningHandler } from './log';

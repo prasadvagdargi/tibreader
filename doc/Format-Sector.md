@@ -84,6 +84,23 @@ Other parts
 - **Not used:** the bitmap mirror, Windows dynamic-disk (LDM) copies, the dedup filter.
 
 
+How a disk-image backup point is shown
+--------------------------------------
+`src/disk/fs.ts` (`DiskFS`), shared with `.tibx`:
+- each stored image is a raw file: `Volume.img` (a single partition), or `Disk.img` plus
+  `Partition N.img` when the image starts with an MBR (logical partitions included) or GPT;
+- each volume with a readable file system also gets a folder of its files, named after the volume and
+  its label: `Partition 2 (Windows)/Users/...`.
+
+File systems: NTFS (`src/ntfs/`), written from Microsoft's and the Linux NTFS project's documentation:
+MFT records with update sequences, `$ATTRIBUTE_LIST` (fragmented files, big folders), run lists with
+sparse runs, folder indexes (`$INDEX_ROOT` + INDX blocks, B-tree order), `$UpCase` for case-insensitive
+names, LZNT1 compression, Windows Compact OS (WOF, Xpress Huffman 4K/8K/16K; LZX refused), alternate
+data streams (`NtfsFS.streamsOf`/`readStream`, not listed as files), hard links. NTFS's own files
+(`$MFT`, ...) are hidden. EFS-encrypted files fail with an `encrypted` error. Tested against images
+from `test/helpers/ntfs-fixture.ts`, **not yet against an image made by Windows**.
+
+
 Assumptions not backed by any real file
 ---------------------------------------
 - **Incremental backup points:** a block that isn't stored is read from the previous backup point.
