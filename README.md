@@ -324,3 +324,7 @@ MIT (see `LICENSE`).
 Maintained by [prasadvagdargi](https://github.com/prasadvagdargi). Based on
 [dennisss/acronis-tib](https://github.com/dennisss/acronis-tib) by Dennis Shtatnov (2018), whose
 original history is kept in this repository.
+
+What this reader knows about sector-by-sector `.tib`, `.tibx` and their encryption comes from the
+reverse-engineering notes of [acronis-tib-reader](https://github.com/TreadingTheTiber/acronis-tib-reader)
+(MIT, the tibread contributors). The code here was written from those notes, not copied.

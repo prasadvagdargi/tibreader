@@ -401,7 +401,7 @@ const handlers: Handlers = {
 };
 
 
-const LIBRARY_CODES = new Set(['not-a-backup', 'unexpected-name', 'missing-part', 'damaged', 'encrypted', 'disk-image', 'unsupported']);
+const LIBRARY_CODES = new Set(['not-a-backup', 'unexpected-name', 'missing-part', 'damaged', 'encrypted', 'wrong-password', 'disk-image', 'unsupported']);
 
 function toErrorInfo(e: any): ErrorInfo {
 	let message = e && e.message ? String(e.message) : String(e);

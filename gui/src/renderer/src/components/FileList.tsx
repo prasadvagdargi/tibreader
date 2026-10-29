@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { makeStyles, mergeClasses, ProgressBar, Text, tokens } from '@fluentui/react-components';
 import { ArrowSortDown16Regular, ArrowSortUp16Regular } from '@fluentui/react-icons';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { Entry } from '../../../shared/api';
+import type { BackupFormat, Entry } from '../../../shared/api';
 import { displayName, iconFor, typeOf } from '../fileTypes';
 import { formatDate, formatSize } from '../format';
 
@@ -119,7 +119,7 @@ const useStyles = makeStyles({
 });
 
 
-function sortEntries(entries: Entry[], key: SortKey, desc: boolean, format: 'Windows' | 'Mac'): Entry[] {
+function sortEntries(entries: Entry[], key: SortKey, desc: boolean, format: BackupFormat): Entry[] {
 	let dir = desc ? -1 : 1;
 	return [...entries].sort((a, b) => {
 		// Folders always come first, like File Explorer
@@ -159,7 +159,7 @@ function useWidth(ref: RefObject<HTMLElement | null>): number {
 
 export interface FileListProps {
 	entries: Entry[];
-	format: 'Windows' | 'Mac';
+	format: BackupFormat;
 	loading: boolean;
 	selected: ReadonlySet<string>;
 	onSelect: (paths: Set<string>) => void;

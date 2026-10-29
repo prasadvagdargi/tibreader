@@ -44,6 +44,10 @@ fileAssociations:
     name: AcronisTrueImageBackup
     description: Acronis True Image backup
     role: Viewer
+  - ext: tibx
+    name: AcronisTrueImageBackupX
+    description: Acronis True Image backup (2020 and later)
+    role: Viewer
 
 nsis:
   artifactName: TibReader-Setup-${version}.${ext}

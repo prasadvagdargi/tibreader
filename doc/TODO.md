@@ -11,23 +11,23 @@ Legend: `[x]` done, `[ ]` to do, `[~]` partly done / blocked (reason given)
 
 Next steps (in priority order)
 ------------------------------
-1. **Record index kind 0x0007** (file recorded without data, read as zeros): find out what it means,
+1. **Real samples for the new formats** (everything in sections 10 and 12 is tested on generated files
+   only): a disk backup of a small USB stick with current True Image (`.tibx`), an encrypted one, any old
+   sector-by-sector `.tib`, an NTFS image made by Windows. Run `TIB_SAMPLE=<file> npm test` and
+   `tib verify` on each; fix what breaks; update `Format-Sector.md`, `Format-Tibx.md`.
+2. **Does True Image open backups made by `tib create` / `tib edit`?** Needs a machine with True Image.
+3. **Alternate data streams on the real backup**: find a downloaded file (with `Zone.Identifier`),
+   compare `tib cat` with the original, decode the RecordIndex tail.
+4. **Record index kind 0x0007** (file recorded without data, read as zeros): find out what it means,
    ideally by backing up a known file that triggers it. See `Format-Windows.md`.
-2. **Alternate data streams on the real backup** (left over from Phase 0 of `Plan-tib-reader.md`): find a
-   downloaded file (with `Zone.Identifier`), compare `tib cat` with the original, decode the RecordIndex tail.
-3. **More real samples**: an incremental chain, a backup split into several files, an encrypted one, a
-   sector-by-sector `.tib` and a `.tibx` (True Image for Windows), plus any Mac backup. Run
-   `TIB_SAMPLE=<file> npm test` and `tib verify` on each, then fix what breaks and record findings in the
-   format notes.
-4. **Disk images, NTFS and `.tibx`**: Phases 1-3 of `Plan-tib-reader.md`. No longer blocked on samples:
-   acronis-tib-reader documents these formats from real files, so work can start against synthetic
-   fixtures.
-5. **Native FUSE / `--drive` on Linux and macOS**: test `tib mount --fuse` (with `@cocalc/fuse-native`)
+5. **Desktop app**: password prompt for encrypted `.tibx`, and the write features (create, edit, writable
+   mount, export) in the UI. Section 11.
+6. **Writable `--drive` by hand**: Explorer and Office saving, renaming and deleting on a mounted backup.
+7. **Native FUSE / `--drive` on Linux and macOS**: test `tib mount --fuse` (with `@cocalc/fuse-native`)
    and `tib mount --drive <folder>` (with rclone + FUSE).
-6. **Windows attributes in mounts**: show hidden/system flags and creation times (needs a per-entry
+8. **Windows attributes in mounts**: show hidden/system flags and creation times (needs a per-entry
    metadata read, so cache it).
-7. **Synthetic Mac fixture** following `Format-Mac.md`, so the Mac parser has end-to-end tests.
-8. **Desktop app** (Windows first): milestones in section 11, plan in `Plan-desktop-app.md`.
+9. **Synthetic Mac fixture** following `Format-Mac.md`, so the Mac parser has end-to-end tests.
 
 
 1. Bugs found in review
@@ -201,6 +201,9 @@ Plan in `Plan-desktop-app.md`; work on the `desktop-app` branch.
       clipboard/drag/open, clean unmount on quit or crash
 - [x] M5 polish: preview pane, search, Verify dialog, properties with attributes, shortcuts, theme choice,
       recent files, resizable folder pane
+  - [x] Opens `.tibx` (dialog filter, drag and drop, file association); `wrong-password` explained;
+        shared `BackupFormat` type
+  - [ ] Password prompt for encrypted `.tibx`; create/edit/writable mount/export in the UI
   - [ ] Real Windows file-type icons (`app.getFileIcon` needs a file on disk; Fluent icons for now)
   - [ ] PDF preview (needs Chromium's PDF viewer in a sandboxed frame)
 - [x] M6 packaging: portable exe, zip, NSIS installer with `.tib` association; single instance; portable data

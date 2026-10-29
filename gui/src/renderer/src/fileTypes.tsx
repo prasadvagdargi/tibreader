@@ -5,7 +5,7 @@ import {
 	Folder20Filled, FolderZip20Regular, HardDrive20Regular, Image20Regular, MusicNote220Regular,
 	SlideText20Regular, Table20Regular, Video20Regular, WindowConsole20Regular,
 } from '@fluentui/react-icons';
-import type { Entry } from '../../shared/api';
+import type { BackupFormat, Entry } from '../../shared/api';
 
 
 type Kind = 'drive' | 'folder' | 'text' | 'pdf' | 'image' | 'video' | 'audio' | 'archive' | 'code' | 'sheet' | 'slides' | 'app' | 'script' | 'other';
@@ -45,7 +45,7 @@ export function extensionOf(name: string): string {
 /**
  * Whether an entry is a backed-up drive: Windows backups show each drive as a top-level folder
  */
-export function isDrive(entry: Entry, format: 'Windows' | 'Mac'): boolean {
+export function isDrive(entry: Entry, format: BackupFormat): boolean {
 	return format === 'Windows' && entry.type === 'directory' && /^\/[^/]+$/.test(entry.path);
 }
 
@@ -54,7 +54,7 @@ export function driveLabel(name: string): string {
 	return /^[A-Za-z]$/.test(name) ? 'Drive (' + name.toUpperCase() + ':)' : name;
 }
 
-export function typeOf(entry: Entry, format: 'Windows' | 'Mac'): TypeInfo {
+export function typeOf(entry: Entry, format: BackupFormat): TypeInfo {
 	if(isDrive(entry, format)) {
 		return { kind: 'drive', label: 'Backed-up drive' };
 	}
@@ -65,7 +65,7 @@ export function typeOf(entry: Entry, format: 'Windows' | 'Mac'): TypeInfo {
 	return KNOWN[ext] || { kind: 'other', label: ext ? ext.toUpperCase() + ' File' : 'File' };
 }
 
-export function displayName(entry: Entry, format: 'Windows' | 'Mac'): string {
+export function displayName(entry: Entry, format: BackupFormat): string {
 	return isDrive(entry, format) ? driveLabel(entry.name) : entry.name;
 }
 
@@ -81,7 +81,7 @@ const COLORS: Partial<Record<Kind, string>> = {
 	text: tokens.colorPaletteBlueForeground2,
 };
 
-export function iconFor(entry: Entry, format: 'Windows' | 'Mac'): ReactElement {
+export function iconFor(entry: Entry, format: BackupFormat): ReactElement {
 	let kind = typeOf(entry, format).kind;
 	let style = { color: COLORS[kind] || tokens.colorNeutralForeground3, flexShrink: 0 };
 

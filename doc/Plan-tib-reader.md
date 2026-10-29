@@ -6,6 +6,11 @@ Written 2026-10-27 after reading all of [acronis-tib-reader](https://github.com/
 was run here: its claims are taken from its docs and code, and checked against our own findings where the
 two projects cover the same format.
 
+**Status 2026-10-29:** Phases 0-3 done; Phase 4 done as experimental, for `.tibx` only (`.tib` encryption
+is too loosely documented to implement). Write support was added on top. All tested on generated files
+only; see `TODO.md` (sections 10 and 12) and `WORKLOG.md`. The code was written from acronis-tib-reader's
+notes, not copied from it.
+
 
 Summary
 -------

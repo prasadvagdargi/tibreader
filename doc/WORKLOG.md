@@ -499,3 +499,16 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
    `mount --writable`, `--level`, `--as-drive`.
 8. Not tested here: whether True Image opens the new backups; a writable drive with Explorer and Office.
 - Tests: 122 pass (new `test/write.test.ts`).
+
+
+2026-10-29: desktop app follow-up and wrap-up
+---------------------------------------------
+1. The app didn't compile once `archive.format` could be 'tibx'. Added a shared `BackupFormat` type in
+   `gui/src/shared/api.ts` used by every component that took `'Windows' | 'Mac'`.
+2. The app opens `.tibx` (open dialog, drag and drop, command line, installer file association) and
+   explains `wrong-password`. Disk-image backups open in the app through the same `DiskFS` view (volume
+   folders and `.img` files) with no app changes.
+3. Not done in the app: a password prompt and the write features (TODO section 11).
+4. Checks: library 122 tests; app typecheck; app e2e 17 passed, 1 skipped (real backup not connected).
+5. State of the tib-reader plan: Phases 0-4 done (4 experimental and `.tibx` only), plus write support.
+   Everything new is tested only on generated files; real samples are next step 1 in `TODO.md`.

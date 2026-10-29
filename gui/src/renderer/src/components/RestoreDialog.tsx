@@ -4,7 +4,7 @@ import {
 	MessageBar, MessageBarBody, Radio, RadioGroup, Spinner, Text, tokens,
 } from '@fluentui/react-components';
 import { FolderOpen20Regular } from '@fluentui/react-icons';
-import type { ConflictPolicy, Contents, Entry } from '../../../shared/api';
+import type { BackupFormat, ConflictPolicy, Contents, Entry } from '../../../shared/api';
 import { call, errorMessage, tib } from '../api';
 import { displayName } from '../fileTypes';
 import { formatDate, formatSize, plural } from '../format';
@@ -40,7 +40,7 @@ const useStyles = makeStyles({
 });
 
 /** Where a restored item ends up, roughly as Windows would name it */
-function targetOf(dest: string, source: Entry, format: 'Windows' | 'Mac'): string {
+function targetOf(dest: string, source: Entry, format: BackupFormat): string {
 	if(source.path === '/') {
 		return dest;
 	}
@@ -58,7 +58,7 @@ export function RestoreDialog(props: {
 	sessionId: string;
 	slice: number;
 	sliceCreated: string;
-	format: 'Windows' | 'Mac';
+	format: BackupFormat;
 	backupName: string;
 	onClose: () => void;
 	onStart: (dest: string, policy: ConflictPolicy) => void;

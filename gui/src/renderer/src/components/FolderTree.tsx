@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactElement } from 'react';
 import { makeStyles, mergeClasses, Spinner, tokens, Tree, TreeItem, TreeItemLayout } from '@fluentui/react-components';
 import { Archive20Regular } from '@fluentui/react-icons';
-import type { Entry } from '../../../shared/api';
+import type { BackupFormat, Entry } from '../../../shared/api';
 import { call } from '../api';
 import { displayName, iconFor } from '../fileTypes';
 
@@ -47,7 +47,7 @@ function ownEvent(e: MouseEvent | KeyboardEvent): boolean {
 export function FolderTree(props: {
 	sessionId: string;
 	slice: number;
-	format: 'Windows' | 'Mac';
+	format: BackupFormat;
 	rootLabel: string;
 	current: string;
 	onNavigate: (path: string) => void;

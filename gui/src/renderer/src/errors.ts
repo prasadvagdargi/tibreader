@@ -13,7 +13,12 @@ export function friendlyError(code: ErrorCode): FriendlyError {
 		case 'encrypted':
 			return {
 				title: 'This backup is password-protected',
-				body: 'TibReader can\'t open encrypted backups yet. Use Acronis True Image to restore files from it.',
+				body: 'TibReader can\'t open encrypted backups in this app yet. Use Acronis True Image to restore files from it. (The tib command line can try .tibx backups with --password, experimentally.)',
+			};
+		case 'wrong-password':
+			return {
+				title: 'Wrong password',
+				body: 'That password doesn\'t open this backup.',
 			};
 		case 'disk-image':
 			return {
@@ -33,7 +38,7 @@ export function friendlyError(code: ErrorCode): FriendlyError {
 		case 'not-a-backup':
 			return {
 				title: 'This isn\'t an Acronis backup',
-				body: 'Choose a .tib file made by Acronis True Image.',
+				body: 'Choose a .tib or .tibx file made by Acronis True Image.',
 			};
 		case 'damaged':
 			return {
