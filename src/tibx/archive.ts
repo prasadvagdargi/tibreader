@@ -12,6 +12,8 @@ import { createBlockCache, LRUCache } from '../cache';
 import { PAGE_ENVELOPE_SIZE, PAGE_SIZE, PageFile, PageStore, PageType } from './pages';
 import { ArchiveHeader, parseMetaKeys, parseSuperblock, readNewestHeader, TREE_SLOT } from './header';
 import { readTree } from './lsm';
+import { algorithmName, DataKey, decryptSegment, KEYMAP_SLOT, unwrapPasswordKey } from './encryption';
+import { OpenOptions } from '../archive';
 
 
 /** Where a segment is: from the segment_map tree */
@@ -50,6 +52,7 @@ interface BackupPointRecord {
 
 const WHOLE_SEGMENT = 0xffff;
 const SG_MAGIC = Buffer.from('SG\x00\x01', 'latin1');
+const SE_MAGIC = Buffer.from('SE\x00\x00', 'latin1');
 const SG_PAYLOAD_OFFSET = 0x2c;
 const MIN_SHOWN_STREAM_SIZE = 1024 * 1024;
 
@@ -59,9 +62,11 @@ const MIN_SHOWN_STREAM_SIZE = 1024 * 1024;
  * stored size, key id (0 = not encrypted), compression; the stored bytes start at +0x2C and continue
  * on the following data pages after their 8-byte envelopes.
  */
-async function readSegment(store: PageStore, firstPage: number, segmentId: number): Promise<Buffer> {
+async function readSegment(store: PageStore, firstPage: number, segmentId: number, dataKey: DataKey | null): Promise<Buffer> {
 	let page = await store.readPage(firstPage);
-	if(page[1] !== PageType.Data || !page.subarray(8, 12).equals(SG_MAGIC)) {
+	let magic = page.subarray(8, 12);
+	let isEncrypted = magic.equals(SE_MAGIC);
+	if(page[1] !== PageType.Data || !(magic.equals(SG_MAGIC) || isEncrypted)) {
 		throw new FormatError('Segment ' + segmentId + ' is missing at page ' + firstPage);
 	}
 	let decompressedSize = page.readUInt32BE(12);
@@ -69,8 +74,8 @@ async function readSegment(store: PageStore, firstPage: number, segmentId: numbe
 	let keyId = page.readUInt32BE(20);
 	let compression = page.readUInt16BE(24);
 
-	if(keyId !== 0) {
-		throw new NotSupportedError('This .tibx backup is encrypted', 'encrypted');
+	if((isEncrypted || keyId !== 0) && !dataKey) {
+		throw new NotSupportedError('This .tibx backup is encrypted; open it with its password (experimental)', 'encrypted');
 	}
 	if(storedSize > 64 * 1024 * 1024 || decompressedSize > 64 * 1024 * 1024) {
 		throw new FormatError('Segment ' + segmentId + ' is implausibly large');
@@ -80,14 +85,17 @@ async function readSegment(store: PageStore, firstPage: number, segmentId: numbe
 	let collected = parts[0].length;
 	for(let p = firstPage + 1; collected < storedSize; p++) {
 		let next = await store.readPage(p);
-		if(next[1] !== PageType.Data || next.subarray(8, 12).equals(SG_MAGIC)) {
+		if(next[1] !== PageType.Data || next.subarray(8, 12).equals(SG_MAGIC) || next.subarray(8, 12).equals(SE_MAGIC)) {
 			throw new FormatError('Segment ' + segmentId + ' is cut short at page ' + p);
 		}
 		let take = Math.min(PAGE_SIZE - PAGE_ENVELOPE_SIZE, storedSize - collected);
 		parts.push(next.subarray(PAGE_ENVELOPE_SIZE, PAGE_ENVELOPE_SIZE + take));
 		collected += take;
 	}
-	let stored = Buffer.concat(parts);
+	let stored: Buffer = Buffer.concat(parts);
+	if(isEncrypted || keyId !== 0) {
+		stored = decryptSegment(stored, dataKey!);
+	}
 
 	let data: Buffer;
 	if(compression === 0) {
@@ -280,11 +288,57 @@ export class TibxArchive extends Archive {
 			if(!location) {
 				throw new FormatError('Segment ' + segmentId + ' is not in the segment map');
 			}
-			return readSegment(this._store, location.firstPage, segmentId);
+			return readSegment(this._store, location.firstPage, segmentId, this._dataKey);
 		});
 	}
 
-	static async OpenFile(fileName: string): Promise<TibxArchive> {
+	private _dataKey: DataKey | null = null;
+
+	/** The encryption algorithm, when the backup is encrypted and was opened with its password */
+	get encryption(): string | undefined {
+		return this._dataKey ? algorithmName(this._dataKey.algorithmId) : undefined;
+	}
+
+	/**
+	 * EXPERIMENTAL: finds the data key with the password (header slot 7, password users [0x01][name]),
+	 * and checks it by decrypting and decompressing one segment.
+	 */
+	private async unlock(password: string | undefined, testSegmentId: number) {
+		if(password === undefined) {
+			throw new NotSupportedError('This .tibx backup is encrypted; open it with its password (experimental)', 'encrypted');
+		}
+		let keymap = parseSuperblock(this.header.slots[KEYMAP_SLOT] || Buffer.alloc(0), KEYMAP_SLOT);
+		if(!keymap) {
+			throw new NotSupportedError('This .tibx backup is encrypted, but its key records weren\'t found', 'encrypted');
+		}
+
+		let candidates = (await readTree(this._store, keymap)).filter((e) => e.key[0] === 0x01);
+		if(candidates.length === 0) {
+			throw new NotSupportedError('This .tibx backup is protected by a certificate, not a password; that isn\'t supported', 'encrypted');
+		}
+		for(let c of candidates) {
+			let key = unwrapPasswordKey(c.value!, password);
+			if(!key) {
+				continue;
+			}
+			this._dataKey = key;
+			try {
+				await this.segment(testSegmentId);
+				warn('Decrypting .tibx backups is experimental: written from format notes, not yet checked against a backup encrypted by True Image');
+				return;
+			}
+			catch(e: any) {
+				this._dataKey = null;
+				this._segmentCache.clear();
+				if(!(e instanceof FormatError)) {
+					throw e;
+				}
+			}
+		}
+		throw new FormatError('Wrong password for this backup', 'wrong-password');
+	}
+
+	static async OpenFile(fileName: string, options: OpenOptions = {}): Promise<TibxArchive> {
 		let dir = path.dirname(fileName);
 		let base = path.basename(fileName);
 		let m = /^(.*?)(?:-(\d{4}))?\.tibx$/i.exec(base);
@@ -341,7 +395,7 @@ export class TibxArchive extends Archive {
 			let archive = new TibxArchive(stem, store, newest);
 			try {
 				archive.fileTime = (await fs.promises.stat(fileName)).mtime;
-				await archive.load();
+				await archive.load(options);
 			}
 			catch(e) {
 				await archive.close();
@@ -357,7 +411,7 @@ export class TibxArchive extends Archive {
 		}
 	}
 
-	private async load() {
+	private async load(options: OpenOptions) {
 		let slot = (i: number) => this.header.slots[i] || Buffer.alloc(0);
 		let dataMap = parseSuperblock(slot(TREE_SLOT.dataMap), TREE_SLOT.dataMap);
 		let segmentMap = parseSuperblock(slot(TREE_SLOT.segmentMap), TREE_SLOT.segmentMap);
@@ -388,12 +442,12 @@ export class TibxArchive extends Archive {
 			});
 		}
 
-		// Say so right away if the data is encrypted, rather than on the first read
+		// An encrypted backup needs its password before anything can be read
 		if(extents.length > 0) {
 			let location = this._segments.get(extents[0].segmentId);
 			let first = location ? await this._store.readPage(location.firstPage).catch(() => null) : null;
-			if(first && first.subarray(8, 12).equals(SG_MAGIC) && first.readUInt32BE(20) !== 0) {
-				throw new NotSupportedError('This .tibx backup is encrypted', 'encrypted');
+			if(first && (first.subarray(8, 12).equals(SE_MAGIC) || first.readUInt32BE(20) !== 0)) {
+				await this.unlock(options.password, extents[0].segmentId);
 			}
 		}
 
@@ -449,6 +503,7 @@ export class TibxArchive extends Archive {
 		if(meta.hostName) {
 			config.computer_name = meta.hostName;
 		}
+		config.encryption = this.encryption ?? 'none';
 
 		let byUuid = new Map(records.map((r) => [ r.uuid.toString('hex'), r ]));
 		let points: Array<BackupPointRecord | null> = records.length ? records : [ null ];
@@ -513,4 +568,4 @@ export class TibxArchive extends Archive {
 	}
 }
 
-Archive.AddFileType('tibx', (fileName) => TibxArchive.OpenFile(fileName));
+Archive.AddFileType('tibx', (fileName, options) => TibxArchive.OpenFile(fileName, options));

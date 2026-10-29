@@ -170,9 +170,31 @@ describe('.tibx archives (synthetic)', () => {
 		});
 	});
 
-	test('encrypted archives are refused clearly', async () => {
+	test('encrypted archives without key records are refused clearly', async () => {
 		await withTibx([ { volumes: { 10: sampleImage(256 * 1024, 61) } } ], { encrypted: true }, async (file) => {
 			await assert.rejects(openArchive(file), (e: any) => e instanceof NotSupportedError && e.code === 'encrypted');
+			await assert.rejects(openArchive(file, { password: 'x' }), (e: any) => e instanceof NotSupportedError && e.code === 'encrypted');
 		});
 	});
+
+	for(let [ algorithm, name ] of [ [ 3, 'aes-256-cbc' ], [ 1, 'aes-128-cbc' ], [ 7, 'aes-256-gcm' ], [ 5, 'aes-128-gcm' ] ] as Array<[number, string]>) {
+		test('experimental: password-encrypted archive, ' + name, async () => {
+			let img = sampleImage(1536 * 1024, 71);
+			await withTibx([ { volumes: { 10: img } } ], { password: 'correct horse', encryptionAlgorithm: algorithm }, async (file) => {
+				await assert.rejects(openArchive(file), (e: any) => e instanceof NotSupportedError && e.code === 'encrypted');
+				await assert.rejects(openArchive(file, { password: 'wrong' }), (e: any) => e instanceof FormatError && e.code === 'wrong-password');
+
+				let a = await openArchive(file, { password: 'correct horse' });
+				try {
+					assert.equal(a.getSlice().config.encryption, name);
+					let d = await a.getSlice().openFileSystem();
+					let all = await d.read('/Volume.img', 0, img.length);
+					assert.ok(all.equals(img.subarray(0, all.length)));
+				}
+				finally {
+					await a.close();
+				}
+			});
+		});
+	}
 });

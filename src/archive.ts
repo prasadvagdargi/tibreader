@@ -8,8 +8,13 @@ import { detectFormat, FormatKind } from './detect';
 type ArchiveGenerator = (initialVolume: Volume) => Promise<Archive>;
 const ArchiveImpls: { [v: number]: ArchiveGenerator } = {};
 
+export interface OpenOptions {
+	/** Password for encrypted backups (experimental; .tibx only) */
+	password?: string;
+}
+
 /** Opens formats that don't start with a .tib volume header (e.g. .tibx) */
-type FileArchiveGenerator = (fileName: string) => Promise<Archive>;
+type FileArchiveGenerator = (fileName: string, options: OpenOptions) => Promise<Archive>;
 const FileImpls: { [kind: string]: FileArchiveGenerator } = {};
 
 export type ArchiveFormat = 'Windows' | 'Mac' | 'tibx';
@@ -34,7 +39,7 @@ export default abstract class Archive {
 	 * NOTE: Formats register themselves when imported. Import from the package root ('tibreader'),
 	 * which loads both the Mac and Windows formats.
 	 */
-	static async Open(fileName: string): Promise<Archive> {
+	static async Open(fileName: string, options: OpenOptions = {}): Promise<Archive> {
 
 		// Normalize in case the name of a Mac metadata file was given
 		fileName = fileName.replace(/\.tib\.metadata$/i, '.tib');
@@ -47,7 +52,7 @@ export default abstract class Archive {
 		if(detected.kind !== 'tib') {
 			let open = FileImpls[detected.kind];
 			if(open) {
-				return open(fileName);
+				return open(fileName, options);
 			}
 
 			if(detected.kind === 'unknown') {

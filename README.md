@@ -19,7 +19,7 @@ Status
 | Mac (all versions) | Should work | Should work | Should work | No (original samples are gone) |
 | `.tibx` disk images, True Image 2020 and later (single or split files, incremental chains) | Yes: NTFS volumes as folders, plus raw `.img` files | Yes | Yes (page checksums, every segment) | No sample yet (generated test files, following acronis-tib-reader's notes from real files) |
 | Windows sector-by-sector (disk image), True Image 2014-2019 | Yes: NTFS volumes as folders, plus each disk and partition as a raw `.img` file | Yes (NTFS compression and Compact OS included) | Yes (every block's checksum) | No sample yet (generated test files, following acronis-tib-reader's notes from real files) |
-| Encrypted backups | Windows: clear "not supported" error. Mac: not detected | | | |
+| Encrypted backups | `.tibx` with a password: **experimental** (`--password`), written from decompilation notes, never tried on a real encrypted backup. `.tib`: clear "not supported" error. Mac: not detected | | | |
 | Windows True Image 2010-2013 `.tib`, old file-backup containers, tape | No: recognized, clear "not supported" error | | | |
 
 

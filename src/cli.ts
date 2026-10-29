@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { openArchive, Archive, Slice, FsEntry } from './index';
+import { openArchive, Archive, Slice, FsEntry, OpenOptions } from './index';
 import { extract, measure } from './fs/extract';
 import { describeArchive } from './info';
 import { verifyHeaders, verifySnapshot } from './verify';
@@ -22,7 +22,7 @@ Commands:
   verify  <backup>                      Check the backup can be read; checks every data block
   mount   <backup>                      Serve the backup as a read-only drive (see below)
 
-<backup> is any file of the backup: NAME_full_b1_s1_v1.tib (Windows) or NAME.tib (Mac).
+<backup> is any file of the backup: NAME_full_b1_s1_v1.tib (Windows), NAME.tib (Mac) or NAME.tibx.
 Backup files are only ever read.
 
 Options:
@@ -38,6 +38,7 @@ Options:
   -p, --port <n>      mount: WebDAV port (default 8642; a free port with --drive)
       --host <addr>   mount: address to listen on (default 127.0.0.1, this computer only)
       --fuse <dir>    mount: use native FUSE at <dir> instead of WebDAV (Linux/macOS, optional package)
+      --password <p>  Password of an encrypted .tibx backup (experimental; or set TIB_PASSWORD)
       --debug         Show stack traces on errors
   -h, --help          Show this help
   -v, --version       Show the version
@@ -66,6 +67,7 @@ const OPTIONS = {
 	host: { type: 'string' },
 	fuse: { type: 'string' },
 	drive: { type: 'string', short: 'd' },
+	password: { type: 'string' },
 	debug: { type: 'boolean' },
 	help: { type: 'boolean', short: 'h' },
 	version: { type: 'boolean', short: 'v' },
@@ -73,7 +75,7 @@ const OPTIONS = {
 
 type Options = {
 	slice?: string; long?: boolean; recursive?: boolean; json?: boolean; overwrite?: boolean; quick?: boolean;
-	quiet?: boolean; port?: string; host?: string; fuse?: string; drive?: string; debug?: boolean; help?: boolean; version?: boolean;
+	quiet?: boolean; port?: string; host?: string; fuse?: string; drive?: string; password?: string; debug?: boolean; help?: boolean; version?: boolean;
 };
 
 
@@ -117,12 +119,18 @@ function pickSlice(archive: Archive, opts: Options): Slice {
 	return archive.getSlice(parseIntOption(opts.slice, 'slice', -1));
 }
 
-async function withArchive<T>(file: string | undefined, fn: (a: Archive) => Promise<T>): Promise<T> {
+/** Open options from the command line; the password can also come from TIB_PASSWORD */
+function openOptions(opts: Options): OpenOptions {
+	let password = opts.password ?? process.env.TIB_PASSWORD;
+	return password !== undefined ? { password } : {};
+}
+
+async function withArchive<T>(file: string | undefined, opts: Options, fn: (a: Archive) => Promise<T>): Promise<T> {
 	if(!file) {
 		throw new UsageError('Missing the backup file');
 	}
 
-	let archive = await openArchive(file);
+	let archive = await openArchive(file, openOptions(opts));
 	try {
 		return await fn(archive);
 	}
@@ -140,7 +148,7 @@ async function cmdInfo(args: string[], opts: Options) {
 		}
 	}
 
-	await withArchive(args[0], async (archive) => {
+	await withArchive(args[0], opts, async (archive) => {
 		let info = await describeArchive(archive);
 		let { format, volumes, slices } = info;
 
@@ -193,7 +201,7 @@ function lsLine(e: FsEntry, name: string, long?: boolean) {
 }
 
 async function cmdLs(args: string[], opts: Options) {
-	await withArchive(args[0], async (archive) => {
+	await withArchive(args[0], opts, async (archive) => {
 		let snapshot = await pickSlice(archive, opts).openFileSystem();
 		let target = args[1] || '/';
 
@@ -231,7 +239,7 @@ async function cmdCat(args: string[], opts: Options) {
 		throw new UsageError('Missing the path of the file inside the backup');
 	}
 
-	await withArchive(args[0], async (archive) => {
+	await withArchive(args[0], opts, async (archive) => {
 		let snapshot = await pickSlice(archive, opts).openFileSystem();
 		let e = await snapshot.stat(args[1]);
 		if(!e) {
@@ -257,7 +265,7 @@ async function cmdExtract(args: string[], opts: Options) {
 		throw new UsageError('Missing the destination folder');
 	}
 
-	await withArchive(args[0], async (archive) => {
+	await withArchive(args[0], opts, async (archive) => {
 		let snapshot = await pickSlice(archive, opts).openFileSystem();
 		let started = Date.now();
 
@@ -277,7 +285,7 @@ async function cmdExtract(args: string[], opts: Options) {
 
 
 async function cmdVerify(args: string[], opts: Options) {
-	return withArchive(args[0], async (archive) => {
+	return withArchive(args[0], opts, async (archive) => {
 		let problems = 0;
 		let unstored = 0;
 
@@ -331,7 +339,7 @@ async function cmdMount(args: string[], opts: Options) {
 		throw new UsageError('Missing the backup file');
 	}
 
-	let archive = await openArchive(args[0]);
+	let archive = await openArchive(args[0], openOptions(opts));
 	let stop: () => Promise<void>;
 
 	try {

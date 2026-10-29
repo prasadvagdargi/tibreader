@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 import { sealPage } from '../../src/tibx/pages';
 import { lz4CompressBlock } from './compressors';
 
@@ -27,8 +28,12 @@ export interface TibxFixtureOptions {
 	splitPages?: number;
 	/** Use LZ4 for tree pages (default true) */
 	lz4Pages?: boolean;
-	/** Mark segments as encrypted */
+	/** Mark segments as encrypted without any key records (can't be opened) */
 	encrypted?: boolean;
+	/** Encrypt segments for this password, with key records in header slot 7 */
+	password?: string;
+	/** 1-3 AES-128/192/256-CBC, 5-7 AES-128/192/256-GCM (default 3) */
+	encryptionAlgorithm?: number;
 	/** Corrupt one byte of this data segment's first page */
 	corruptSegment?: number;
 	hostName?: string;
@@ -192,6 +197,45 @@ function superblock(tree: TreeSpec, roots: number[], memtree?: Array<{ key: Buff
 	return Buffer.concat([ sb, extra ]);
 }
 
+/**
+ * Header slot 7: the key records. One password user, "[0x01]user" -> format 1, algorithm, PBKDF2
+ * iterations log2 (10 here, to keep tests fast), 0, salt, AES-256-CBC(KEK, zero IV)(data key).
+ * Raw (uncompressed) mem-tree with length-prefixed cells, as for variable-size trees.
+ */
+function keymapSuperblock(password: string, algorithm: number, dataKey: Buffer): Buffer {
+	let salt = crypto.randomBytes(16);
+	let kek = crypto.pbkdf2Sync(Buffer.from(password, 'utf8'), salt, 1 << 10, 32, 'sha256');
+	let c = crypto.createCipheriv('aes-256-cbc', kek, Buffer.alloc(16));
+	let wrapped = Buffer.concat([ c.update(dataKey), c.final() ]);
+	let value = Buffer.concat([ Buffer.from([ 0x01, algorithm, 10, 0 ]), salt, wrapped ]);
+	let key = Buffer.concat([ Buffer.from([ 0x01 ]), Buffer.from('user') ]);
+	// A certificate user too, which a password can't open
+	let certKey = Buffer.concat([ Buffer.from([ 0x02 ]), Buffer.alloc(32, 7), u32be(1) ]);
+	let certValue = Buffer.concat([ Buffer.from([ 0x02, algorithm, 0, 0 ]), Buffer.alloc(256, 9) ]);
+	let cell = (k: Buffer, v: Buffer) => Buffer.concat([ Buffer.from([ k.length ]), leb128(v.length), k, v ]);
+	let cells = Buffer.concat([ cell(key, value), cell(certKey, certValue) ]);
+
+	let sb = Buffer.alloc(0x178);
+	sb.write('L-SB', 0, 'latin1');
+	sb[4] = 1;
+	sb[5] = 0;
+	sb.writeBigUInt64BE(0xffffffffffffffffn, 0x18);
+	sb[0x158] = 0;
+	sb.writeUInt16BE(2, 0x15a);
+	sb.writeUInt32BE(cells.length, 0x15c);
+	return Buffer.concat([ sb, cells ]);
+}
+
+function leb128(n: number): Buffer {
+	let out: number[] = [];
+	do {
+		let b = n & 0x7f;
+		n >>>= 7;
+		out.push(n ? b | 0x80 : b);
+	} while(n);
+	return Buffer.from(out);
+}
+
 function headerBody(slots: Buffer[], sequence: number, firstGlobalPage: number): Buffer {
 	let dir = Buffer.concat(slots.map((s) => {
 		let padded = Buffer.alloc(4 + ((s.length + 3) & ~3));
@@ -236,17 +280,39 @@ export function writeTibx(dir: string, points: TibxPointSpec[], opts: TibxFixtur
 	let nextExtent = 1;
 	let sliceUuids: Buffer[] = [];
 
+	let algorithm = opts.encryptionAlgorithm || 3;
+	let algorithmNames: { [id: number]: [ string, number ] } = {
+		1: [ 'aes-128-cbc', 16 ], 2: [ 'aes-192-cbc', 24 ], 3: [ 'aes-256-cbc', 32 ],
+		5: [ 'aes-128-gcm', 16 ], 6: [ 'aes-192-gcm', 24 ], 7: [ 'aes-256-gcm', 32 ],
+	};
+	let dataKey = crypto.randomBytes(algorithmNames[algorithm][1]);
+	let encrypt = (plain: Buffer): Buffer => {
+		let [ cipherName ] = algorithmNames[algorithm];
+		let iv = crypto.randomBytes(16);
+		if(cipherName.endsWith('gcm')) {
+			let c = crypto.createCipheriv(cipherName as crypto.CipherGCMTypes, dataKey, iv);
+			let ct = Buffer.concat([ c.update(plain), c.final() ]);
+			return Buffer.concat([ iv, c.getAuthTag(), ct ]);
+		}
+		let c = crypto.createCipheriv(cipherName, dataKey, iv);
+		return Buffer.concat([ iv, c.update(plain), c.final() ]);
+	};
+
 	let writeSegment = (data: Buffer, sliceId: number): number => {
 		let id = nextSegment++;
 		let compressed = zlib.zstdCompressSync(data);
-		let stored = compressed.length < data.length ? compressed : data;
+		let isCompressed = compressed.length < data.length;
+		let stored = isCompressed ? compressed : data;
+		if(opts.password !== undefined) {
+			stored = encrypt(stored);
+		}
 		w.ensureRoom(1 + Math.ceil(Math.max(0, stored.length - (PAGE - 0x2c)) / BODY));
 		let first = Buffer.alloc(BODY);
-		first.write('SG\x00\x01', 0, 'latin1');
+		first.write(opts.password !== undefined ? 'SE\x00\x00' : 'SG\x00\x01', 0, 'latin1');
 		first.writeUInt32BE(data.length, 4);
 		first.writeUInt32BE(stored.length, 8);
-		first.writeUInt32BE(opts.encrypted ? 1 : 0, 12);
-		first.writeUInt16BE(stored === data ? 0 : 0x0301, 16);
+		first.writeUInt32BE(opts.encrypted || opts.password !== undefined ? 1 : 0, 12);
+		first.writeUInt16BE(isCompressed ? 0x0301 : 0, 16);
 		let firstTake = Math.min(stored.length, PAGE - 0x2c);
 		stored.copy(first, 0x2c - 8, 0, firstTake);
 		let firstPage = w.add(page(0xff, first));
@@ -334,6 +400,9 @@ export function writeTibx(dir: string, points: TibxPointSpec[], opts: TibxFixtur
 		s[1] = superblock(dataMap, [ dataRoot ]);
 		s[2] = superblock(segmentMap, [ segmentRoot ]);
 		s[5] = superblock({ keyLength: 4, valueLength: 132, entries: [] }, [], slices);
+		if(opts.password !== undefined) {
+			s[7] = keymapSuperblock(opts.password, algorithm, dataKey);
+		}
 		s[9] = meta;
 		s[18] = Buffer.concat([ u32be(0), u64be(0) ]);
 		return headerBody(s, sequence, firstGlobalPage);

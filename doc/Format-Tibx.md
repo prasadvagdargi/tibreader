@@ -100,4 +100,26 @@ Assumptions (no real sample to check):
 - **Extents sharing a segment** (index != `0xFFFF`) are stored back to back in index order.
 - **Whole-disk backups:** whether the partition table is in a stream of its own isn't known; partitions
   are found when a stream starts with one.
-- **Encryption:** detected from the first segment's key id or a tree page's encoding; refused for now.
+- **Encryption:** see below.
+
+
+Encryption (experimental)
+-------------------------
+From acronis-tib-reader's decompilation notes (`docs/legacy/ARCHIVE3_ENCRYPTION.md`, marked "confirmed
+via decompilation" there), implemented in `src/tibx/encryption.ts`, **never tested against a backup
+encrypted by True Image**:
+- Header slot 7 is the key tree (variable-size cells). A password user is the record `[0x01][user name]`:
+  `0x01`, algorithm (1-3 AES-128/192/256-CBC, 5-7 AES-128/192/256-GCM), PBKDF2 iterations as a power of two
+  (10-24), 0, 16-byte salt, then the data key encrypted with AES-256-CBC (zero IV, PKCS#7) under
+  PBKDF2-HMAC-SHA256(password, salt, 32 bytes). Certificate users (`[0x02]...`, RSA-OAEP) aren't supported.
+- Encrypted segments have "SE\0\0" instead of "SG\0\1" and a non-zero key id; their stored bytes are
+  the IV (16 bytes; GCM: then a 16-byte tag) and the ciphertext of the compressed data.
+- The format has no password check, so the reader tries each password user and confirms by decrypting
+  and decompressing the first segment. Wrong password: `FormatError` with code `wrong-password`.
+- Encrypted tree pages (encoding bit `0x80`) aren't supported; their layout isn't documented.
+- Use: `openArchive(file, { password })`, `tib --password ...` or `TIB_PASSWORD`. A warning says it's
+  experimental each time.
+
+Sector-by-sector and file `.tib` encryption stays unsupported: acronis-tib-reader's notes leave the
+framing (`0xE0` frames, 16 KiB CBC windows, where the IVs are) unconfirmed, so any implementation would
+be a guess.

@@ -459,3 +459,20 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 7. Fixture lesson: split files must reserve their header pages inside the global page space while pages
    are laid out; appending them afterwards shifted every page reference.
 - Tests: 109 pass.
+
+
+2026-10-29: Phase 4, experimental encryption
+--------------------------------------------
+1. The maintainer chose "build it, mark experimental" for encryption without real encrypted samples.
+2. `.tibx`: acronis-tib-reader's notes are concrete here (decompiled): key records in header slot 7,
+   PBKDF2-HMAC-SHA256 (16-byte salt, 2^10-2^24 iterations) unwrapping the data key with AES-256-CBC,
+   "SE" segments with a stored IV (+ tag for GCM). Implemented in `src/tibx/encryption.ts` with
+   `node:crypto` only. The format has no password check, so each candidate key is confirmed by
+   decrypting and decompressing the first segment.
+3. `openArchive(file, { password })`, `tib --password` / `TIB_PASSWORD`; new error code
+   `wrong-password`. Every successful open warns that decryption is experimental.
+4. `.tib` encryption deliberately left unsupported: the notes leave its framing unconfirmed; a guessed
+   decryptor would fail on real files in ways that look like damage (fail fast instead).
+5. Tests: AES-128/256 in CBC and GCM, missing password, wrong password, certificate-only records,
+   archives with encrypted segments but no key records.
+- Tests: 113 pass.

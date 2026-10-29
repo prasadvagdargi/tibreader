@@ -163,7 +163,12 @@ Details, sizes and order in `Plan-tib-reader.md`. Work on the `more-formats` bra
   - [x] Encrypted archives refused at open; page checksums checked on every read
   - [~] Assumptions without a real sample: incremental overlap rules, shared segments, whole-disk layout
   - [ ] Single-bit repair with the page CRC (True Image does it; we only report)
-- [ ] Phase 4: encryption, only once real encrypted samples exist
+- [x] Phase 4 (experimental, at the maintainer's request): `.tibx` password decryption (`src/tibx/encryption.ts`)
+  - [x] Key records in header slot 7, PBKDF2-HMAC-SHA256 + AES-256-CBC key unwrap, AES-CBC/GCM segments
+  - [x] `openArchive(file, { password })`, `tib --password` / `TIB_PASSWORD`, `wrong-password` error code
+  - [~] Never checked against a backup encrypted by True Image
+  - [ ] Certificate (RSA) users; encrypted tree pages
+  - [~] `.tib` encryption: left unsupported, the notes don't pin the framing down (would be a guess)
 
 
 11. Desktop app (Windows first)
