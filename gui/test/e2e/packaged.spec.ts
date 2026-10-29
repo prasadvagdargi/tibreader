@@ -39,7 +39,9 @@ test('the packaged app runs portable, browses and mounts with its own rclone', a
 		await win.getByRole('button', { name: 'Mount as drive...' }).click();
 		let dialog = win.getByRole('dialog', { name: 'Mount as a drive' });
 		let mount = dialog.getByRole('button', { name: 'Mount', exact: true });
-		if(!(await dialog.getByText('WinFsp is needed').isVisible({ timeout: 8000 }).catch(() => false))) {
+		// The dialog first checks for WinFsp and free letters; that can take a while on a slow machine
+		await expect(dialog.getByText('Checking...')).toHaveCount(0, { timeout: 30000 });
+		if(!(await dialog.getByText('WinFsp is needed').isVisible())) {
 			await expect(mount).toBeEnabled({ timeout: 15000 });
 			let letter = (await dialog.getByRole('combobox').textContent())!.trim();
 			await mount.click();

@@ -533,3 +533,7 @@ Step-by-step notes on the `modernize-and-fixes` branch, newest last. The open it
 6. First all-OS release run: macOS packaging failed ("Icon must be at least 512x512", ours was 256).
    `npm run icon` now renders 512x512. Rendering 1024 here gave a stretched, cut-off icon (the offscreen
    window is limited by the screen), so the script now refuses to write a capture that isn't square.
+7. Second run: macOS and Linux built; the Windows packaged-app test failed on the runner. Without
+   WinFsp, the mount dialog took over 8 s to finish checking, so the test expected an enabled Mount
+   button. It now waits for "Checking..." to end (up to 30 s) before choosing a path. (This test had never
+   run on a runner before: CI doesn't package the app.)
