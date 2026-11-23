@@ -254,14 +254,14 @@ export class AttributeStream {
 	private _runs: DataRun[];
 	private _first: Attribute;
 
-	constructor(private _volume: NtfsVolume, extents: Attribute[], private _description: string) {
+	constructor(private _volume: NtfsVolume, extents: Attribute[], description: string) {
 		let sorted = extents.slice().sort((a, b) => a.startVcn - b.startVcn);
 		this._first = sorted[0];
 		this.size = this._first.dataSize;
 		this._runs = sorted.flatMap((e) => e.runs);
 
 		if(this._first.flags & ATTRIBUTE_FLAG_ENCRYPTED) {
-			throw new NotSupportedError(_description + ' is encrypted with EFS', 'encrypted');
+			throw new NotSupportedError(description + ' is encrypted with EFS', 'encrypted');
 		}
 	}
 

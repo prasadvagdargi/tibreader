@@ -93,6 +93,7 @@ tib mount "D:/Backups/MyBackup_full_b1_s1_v1.tib" --drive R:
 | `extract <backup> <dest> [path]` | Copy a folder's contents (or one file) into `dest`, keeping modified times. Refuses to overwrite unless `--overwrite` |
 | `verify <backup>` | Check every data block (Windows: against its stored MD5). `--quick` checks only the structure |
 | `mount <backup> [--drive R:]` | Show the backup as a read-only drive (see below) |
+| `mcp` | Run the MCP server for AI assistants (see [Use with Claude](#use-with-claude-and-other-ai-assistants-mcp)) |
 
 `-s N` / `--slice N` picks the backup point: `1` is the oldest, `-1` (default) the newest.
 Windows backups show each backed up drive as a top-level folder: `G:\Pictures` is `/G/Pictures`.
@@ -249,6 +250,62 @@ one-partition disk for that.
 
 New backups open in this tool. **Whether True Image accepts them hasn't been tested** (some fields of
 the format are unknown and written as guesses; see `doc/Format-Windows.md`, "Writing").
+
+
+Use with Claude and other AI assistants (MCP)
+---------------------------------------------
+`tib mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server, so Claude (Claude Code,
+Claude Desktop) and other MCP clients can look into backups and help tidy them up. Backups are only read:
+nothing the assistant does changes or deletes a backup file.
+
+| Tool | What it does |
+|---|---|
+| `find_backups_in_folder` | Finds `.tib` / `.tibx` files in a folder (and below), groups them into backups with sizes and dates, and spots identical copies |
+| `describe_backup` | Format, files, backup points (dates, full or incremental, settings, contents) |
+| `list_folder` | A folder's files and folders, with sizes and modified times |
+| `summarize_folder_sizes` | Where the space goes: size per folder (to any depth) and per file extension |
+| `find_files` | Files by name pattern, extension, size or date; largest first |
+| `find_duplicate_files` | Files stored more than once (by content, SHA-256) and the space they waste |
+| `read_file_text` | Part of a file as text, or a hex preview |
+| `compare_backup_points` | Files added, removed or changed between two backup points, or two backups |
+| `verify_backup` | Checks every data block (or only the structure) |
+| `extract_files` | Copies files out to a folder (writes new files only) |
+| `write_cleaned_copy_of_backup` | Writes a NEW backup without the files you choose (the original stays; True Image acceptance untested, as for `tib edit`) |
+
+The `tib-backups` skill that comes with the plugin teaches Claude the workflows: survey, sizes,
+duplicates, a cleanup plan with the space it frees, and confirming before anything is written. Claude
+never deletes files itself; it gives you the commands to run.
+
+**Claude Code, as a plugin** (the server builds itself on first start; needs Node.js 22.15+ and npm):
+```
+/plugin install tibreader --marketplace prasadvagdargi/tibreader
+```
+On older Claude Code: `/plugin marketplace add prasadvagdargi/tibreader`, then `/plugin install tibreader@tibreader`.
+
+**Claude Code, server only** (after `npm install` and `npm run build`):
+```bash
+claude mcp add tibreader -- node /path/to/tibreader/dist/cli.js mcp
+```
+
+**Claude Desktop** (Settings > Developer > Edit Config, then restart it):
+```json
+{
+  "mcpServers": {
+    "tibreader": { "command": "node", "args": [ "/path/to/tibreader/dist/cli.js", "mcp" ] }
+  }
+}
+```
+Encrypted `.tibx` backups: add `"env": { "TIB_PASSWORD": "..." }`, or give the assistant the password.
+
+**On a Proxmox host or other server**: the server reads the backups where they are, so run it (with
+Claude Code) on the machine that holds them, or in a container that can see them. For example an LXC
+container with the backup storage mounted read-only, as an extra guarantee nothing is changed:
+```bash
+pct set 105 -mp0 /mnt/pve/backups,mp=/backups,ro=1
+```
+Inside it, install Node.js 22.15 or newer and Claude Code, then install the plugin as above and ask e.g.
+"Find the Acronis backups in /backups and tell me what I can safely clean up." (Extracting files or
+writing cleaned copies then needs a writable folder elsewhere.)
 
 
 Library usage

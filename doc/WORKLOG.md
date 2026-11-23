@@ -567,6 +567,28 @@ pm run icon` now renders 512x512. Rendering 1024 here gave a stretched, cut-off 
 3. The v0.1.0 release's files were renamed to the new names (GitHub allows renaming assets).
 
 
+2026-10-29: MCP server, Claude Code plugin and skill
+----------------------------------------------------
+1. Asked for: let Claude and similar assistants browse backups, see sizes, find duplicates and clean up,
+   mainly for `.tib` files kept on a Proxmox server. Plan in `Plan-mcp.md`.
+2. Cleanup first: removed code nothing called (`ReadAllRecords`, `ReverseReadRecord`, `parseVolumeTable`,
+   an unused constant in `mac/box.ts`, a stored-but-unused field in `ntfs/volume.ts`). `formatSize` and
+   the version lookup moved out of `cli.ts` (`src/format.ts`, `src/version.ts`); the "don't replace the
+   backup being read" check moved to `refuseToReplaceBackupFiles()` and is shared by `tib edit` and MCP.
+3. `src/mcp/`: `server.ts` (newline-delimited JSON-RPC over stdio: initialize, ping, tools/list,
+   tools/call; argument and backup problems come back as tool errors so the assistant can correct
+   itself), `session.ts` (up to 8 open backups, reopened when the file's size or time changes; each
+   backup point's file list read once), `tools.ts` (11 tools, arguments checked against their schemas).
+   Requests run one at a time because the readers keep a read position.
+4. Duplicates by content: same size, then SHA-256 of the first 64 KiB, then of the whole file; biggest
+   possible waste first, with a byte budget (`stopped_early`).
+5. Plugin: `.claude-plugin/plugin.json` and `marketplace.json` (the repository is its own marketplace),
+   `plugin/start-mcp-server.cjs` runs `npm ci` / `npm run build` when needed (output to stderr), skill
+   `skills/tib-backups/SKILL.md`. `claude plugin validate` passes (its one warning: the repository's
+   CLAUDE.md isn't plugin context, which is intended).
+6. Tested on generated backups only (`test/mcp.test.ts`, 16 tests); not yet with Claude on real files.
+
+
 2026-11-23: real incremental chain with retries and a missing point
 ------------------------------------------------------------------
 1. A real 6-point file backup (True Image 25.7) didn't open: "sequence number 4 found where 3 was

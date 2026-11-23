@@ -3,10 +3,6 @@ import { Reader } from '../reader';
 import { FormatError, check } from '../errors';
 
 
-// TODO: Start validating this again for all of the boxes instead of records
-const BOX_MAGIC = 0xB0;
-
-
 // These match the box type byte in the file
 export enum BoxType {
 	// In the main file
@@ -105,13 +101,8 @@ export async function ReadBox(reader: Reader): Promise<Box> {
 
 	let start = reader.pos();
 
-	let magic = await reader.readUint8();
-	
-	/*
-	if(magic !== BOX_MAGIC) { // XXX: Magic will be different depending on the file type
-		throw new FormatError('Invalid box');
-	}
-	*/
+	// Box magic byte: differs by file type, so it isn't checked
+	await reader.readUint8();
 
 	let size = await reader.readUint24();
 	

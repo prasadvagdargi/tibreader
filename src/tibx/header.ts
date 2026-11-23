@@ -172,12 +172,3 @@ export function parseMetaKeys(slot: Buffer): { type?: string; diskGuid?: string;
 	let at = (i: number) => (values[i] ? values[i] : undefined);
 	return { type: at(0), diskGuid: at(3), hostName: at(4), product: at(5), installGuid: at(10) };
 }
-
-/** Header slot 18: 12-byte records { uint32 index, uint64 byte offset on the source disk } */
-export function parseVolumeTable(slot: Buffer): Array<{ index: number; diskOffset: number }> {
-	let out: Array<{ index: number; diskOffset: number }> = [];
-	for(let at = 0; at + 12 <= slot.length; at += 12) {
-		out.push({ index: slot.readUInt32BE(at), diskOffset: Number(slot.readBigUInt64BE(at + 4)) });
-	}
-	return out;
-}

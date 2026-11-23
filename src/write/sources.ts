@@ -3,9 +3,10 @@ import path from 'node:path';
 import { SnapshotFS } from '../fs/types';
 import { splitPath } from '../fs/tree';
 import { warn } from '../log';
-import { BackupEntry, WriteBackupOptions, WriteBackupResult, writeFileBackup } from './writer';
+import { BackupEntry, WriteBackupOptions, WriteBackupResult, backupFileName, writeFileBackup } from './writer';
 import { FileAttribute } from '../win/record';
 import { OverlayFS } from './overlay';
+import type Archive from '../archive';
 
 
 /**
@@ -161,4 +162,14 @@ export async function addLocalToOverlay(overlay: OverlayFS, localPath: string, d
  */
 export function writeSnapshotBackup(snapshot: SnapshotFS, output: string, opts: WriteBackupOptions & { from?: string; drive?: string } = {}): Promise<WriteBackupResult> {
 	return writeFileBackup(output, snapshotEntries(snapshot, opts.from || '/', opts.drive), opts);
+}
+
+/**
+ * Throws if a new backup written to 'output' would replace one of the files of 'archive'
+ */
+export async function refuseToReplaceBackupFiles(archive: Archive, output: string): Promise<void> {
+	let target = path.resolve(backupFileName(output)).toLowerCase();
+	if((await archive.files()).some((f) => path.resolve(f.fileName).toLowerCase() === target)) {
+		throw new Error('The new backup would replace a file of the backup being read; choose another name');
+	}
 }

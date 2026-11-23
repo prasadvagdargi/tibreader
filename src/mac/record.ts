@@ -122,45 +122,6 @@ export async function ReadRecord(reader: Reader, blockSize: number): Promise<Rec
 	};
 }
 
-/**
- * Given the end offset of a record, this will parse it backwards starting at the trailer and deriving the start of the record
- * 
- * This is basically an opposite version of the above ParseRecord function
- */
-export async function ReverseReadRecord(reader: Reader, blockSize: number) {
-	
-	let end = reader.pos();
-	let inner_end = end - RECORD_TRAILER_SIZEOF;
-
-	reader.seek(inner_end);
-
-	if(end % blockSize !== 0) {
-		warn('Record does not end at a block offset');
-	}
-
-	let { trailer_size } = await ReadRecordTrailer(reader);
-
-	let start = inner_end - trailer_size;
-		
-	reader.seek(start);
-
-	let { header_size, flags } = await ReadRecordHeader(reader);
-
-	let inner_start = reader.pos();
-
-	if(header_size !== trailer_size) {
-		throw new FormatError('Invalid header/trailer')
-	}
-	
-	return {
-		flags,
-		start, end,
-		inner_start, inner_end
-	};
-}
-
-
-
 // Gets all boxes from inside a chunk
 export async function ReadAllBoxes(reader: Reader, chunk: Chunk): Promise<Box[]> {
 	let out = [];
