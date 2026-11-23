@@ -587,3 +587,25 @@ pm run icon` now renders 512x512. Rendering 1024 here gave a stretched, cut-off 
    `skills/tib-backups/SKILL.md`. `claude plugin validate` passes (its one warning: the repository's
    CLAUDE.md isn't plugin context, which is intended).
 6. Tested on generated backups only (`test/mcp.test.ts`, 16 tests); not yet with Claude on real files.
+
+
+2026-11-23: real incremental chain with retries and a missing point
+------------------------------------------------------------------
+1. A real 6-point file backup (True Image 25.7) didn't open: "sequence number 4 found where 3 was
+   expected". Header dumps showed the sequence number is the backup point number (every file of `s2`
+   has 2), so the per-file sequence check was wrong.
+2. `_v1-2.tib` / `_v1-3.tib` aren't parts of a split: `s2_v1` and `s2_v1-2` start with identical bytes
+   and have no footer (interrupted attempts); `s2_v1-3`'s footer and metadata offset cover only itself.
+   Same for `s6` (two unfinished attempts, no finished one). The name regex now accepts `-N`, and each
+   point uses its newest attempt that has a footer; the others are ignored with a warning.
+3. `s3` is not in the folder. `s4`'s metadata offset says ~63 GiB of data came before it. A slice's start
+   is now found from its trailer's metadata offset minus the position of its first Config record; the
+   missing range is a `MissingDataReader` hole whose reads fail with `missing-part`. The Config record
+   also stores the start (offset 60) and the number of earlier points (offset 56: 3 for `s4`).
+4. Every file of the real chain used record index form `01 04` (no security descriptor after the handles),
+   which was refused as "bad magic": no file content was readable even in the full backup. Now accepted.
+   Drive roots of kind `0x82` no longer warn.
+5. Result on the real chain: points 1, 2, 4, 5 open. 1 and 2 have every file's metadata and blocks in
+   reach (6,948 and 20,232 files). 4 and 5: 218 files (111 GiB) have their data in the missing `s3`.
+6. Fixture: writes a point at an archive offset (`sliceStart`), `_inc_` names, retries, unfinished files,
+   the `01 04` index; headers carry the point number as sequence. Tests for each case.

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { openArchive, FormatError, NotSupportedError, WindowsFS, setWarningHandler } from '../src/index';
-import { standardEntries, tempDir, writeWindowsBackup, FixtureEntry } from './helpers/windows-fixture';
+import { standardEntries, tempDir, writeWindowsBackup, writeWindowsSlice, FixtureEntry } from './helpers/windows-fixture';
 
 
 async function readAll(vfs: WindowsFS, p: string, size: number) {
@@ -120,6 +120,100 @@ describe('Windows backups (synthetic)', () => {
 		fs.unlinkSync(path.join(dir, 'Test_full_b1_s1_v2.tib'));
 
 		await assert.rejects(openArchive(first), FormatError);
+		removeDir(dir);
+	});
+
+	test('uses the retried file of a backup point and ignores the interrupted attempt (_v1-2.tib)', async () => {
+		let dir = tempDir();
+		let full = standardEntries();
+		let inc: FixtureEntry[] = [ { path: 'C:', kind: 'root' }, { path: 'C:/new.txt', kind: 'file', data: Buffer.from('second point'), mtime: new Date('2024-07-01T00:00:00Z') } ];
+
+		let s1 = writeWindowsSlice(dir, full);
+		let interrupted = writeWindowsSlice(dir, inc, { sliceNumber: 2, sliceStart: s1.sliceSize, unfinished: true }).firstFile;
+		writeWindowsSlice(dir, inc, { sliceNumber: 2, sliceStart: s1.sliceSize, attempt: 2 });
+
+		let warnings: string[] = [];
+		setWarningHandler((m) => warnings.push(m));
+		let a = await openArchive(interrupted);
+		try {
+			assert.equal(a.slices.length, 2);
+			assert.deepEqual(a.volumes.map((v) => path.basename(v.fileName)), [ 'Test_full_b1_s1_v1.tib', 'Test_inc_b1_s2_v1-2.tib' ]);
+			await checkContents(await a.getSlice(1).openFileSystem() as WindowsFS, full);
+			await checkContents(await a.getSlice(2).openFileSystem() as WindowsFS, inc);
+			assert.ok(warnings.some((w) => /ignoring unfinished earlier attempts Test_inc_b1_s2_v1\.tib/.test(w)), warnings.join('\n'));
+		}
+		finally {
+			setWarningHandler(undefined);
+			await a.close();
+		}
+
+		removeDir(dir);
+	});
+
+	test('reads backup points that come after a missing one', async () => {
+		let dir = tempDir();
+		let full = standardEntries();
+		let later: FixtureEntry[] = [ { path: 'C:', kind: 'root' }, { path: 'C:/later.txt', kind: 'file', data: Buffer.from('third point'), mtime: new Date('2024-08-01T00:00:00Z') } ];
+
+		let s1 = writeWindowsSlice(dir, full);
+		let s2 = writeWindowsSlice(dir, standardEntries(), { sliceNumber: 2, sliceStart: s1.sliceSize });
+		let s3 = writeWindowsSlice(dir, later, { sliceNumber: 3, sliceStart: s1.sliceSize + s2.sliceSize });
+		fs.unlinkSync(s2.firstFile);
+
+		let warnings: string[] = [];
+		setWarningHandler((m) => warnings.push(m));
+		let a = await openArchive(s3.firstFile);
+		try {
+			assert.equal(a.slices.length, 2);
+			await checkContents(await a.getSlice(1).openFileSystem() as WindowsFS, full);
+			await checkContents(await a.getSlice(2).openFileSystem() as WindowsFS, later);
+			assert.ok(warnings.some((w) => /Backup point 3 builds on .* missing from the folder/.test(w)), warnings.join('\n'));
+
+			// Data of the missing point can't be read, and says why
+			let abs = (a.getSlice(2) as any).absoluteReader;
+			abs.seek(s1.sliceSize + 10);
+			await assert.rejects(abs.readBytes(4), (e: any) => e instanceof FormatError && e.code === 'missing-part');
+		}
+		finally {
+			setWarningHandler(undefined);
+			await a.close();
+		}
+
+		removeDir(dir);
+	});
+
+	test('skips a backup point that never finished', async () => {
+		let dir = tempDir();
+		let first = writeWindowsSlice(dir, standardEntries());
+		writeWindowsSlice(dir, standardEntries(), { sliceNumber: 2, sliceStart: first.sliceSize, unfinished: true, volumeSplit: 100 * 1024 });
+
+		let warnings: string[] = [];
+		setWarningHandler((m) => warnings.push(m));
+		let a = await openArchive(first.firstFile);
+		try {
+			assert.equal(a.slices.length, 1);
+			assert.equal(a.volumes.length, 1);
+			assert.ok(warnings.some((w) => /Backup point 2 is skipped/.test(w)), warnings.join('\n'));
+		}
+		finally {
+			setWarningHandler(undefined);
+			await a.close();
+		}
+
+		removeDir(dir);
+	});
+
+	test('reads record indexes in the "01 04" form', async () => {
+		let dir = tempDir();
+		let entries = standardEntries();
+		let a = await openArchive(writeWindowsBackup(dir, entries, { shortIndex: true }));
+		try {
+			await checkContents(await a.getSlice().openFileSystem() as WindowsFS, entries);
+		}
+		finally {
+			await a.close();
+		}
+
 		removeDir(dir);
 	});
 

@@ -58,6 +58,11 @@ export class Windows2015Volume extends Volume {
 				}
 			}
 
+			// An unfinished file (interrupted backup) just ends in data
+			if(!isValid) {
+				return { isValid, sliceSize: 0, length: FOOTER_SIZE };
+			}
+
 			// Counted from the end of the header of the first volume of the slice
 			let sliceSize = readUint64LE(buf, buf.length - this.header.length - 8);
 

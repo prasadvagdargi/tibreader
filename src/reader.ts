@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import search from './search';
+import { FormatError } from './errors';
 
 /**
  * Largest single read we allow. Size fields in a corrupt file could otherwise ask for gigabytes of memory.
@@ -269,11 +270,45 @@ export class BufferReader extends Reader {
 
 
 /**
+ * Stands in for bytes that aren't available, such as a backup point whose files are gone. It has a length
+ * so that later data keeps its position, but every read fails with a FormatError.
+ */
+export class MissingDataReader extends Reader {
+	private _pos = 0;
+
+	constructor(private _length: number, private _message: string) {
+		super();
+	}
+
+	async close() { }
+
+	pos() {
+		return this._pos;
+	}
+
+	seek(n: number) {
+		this._pos = n;
+	}
+
+	async length() {
+		return this._length;
+	}
+
+	slice(start: number = 0, end: number = this._length) {
+		return new MissingDataReader(end - start, this._message);
+	}
+
+	async readBytes(n: number): Promise<Buffer> {
+		throw new FormatError(this._message, 'missing-part');
+	}
+}
+
+
+/**
  * A reader made of several readers joined end to end.
  *
  * It takes ownership of the readers it is given and closes them when it is closed.
- *
- * NOTE: Gaps between readers (e.g. missing volumes) aren't supported.
+ * Use a MissingDataReader for a gap.
  */
 export class ConcatenatedReader extends Reader {
 
