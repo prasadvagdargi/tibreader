@@ -11,16 +11,43 @@ Volume file layout
 [32-byte header] [slice data ...] [zero padding] [48-byte footer]
 ```
 - Header: magic `CE 24 B9 A2`, header length `0x20`, version `0` (Windows), 12 bytes of ids (see below),
-  sequence number (starts at 1), Adler-32 of the header, block size `32`. Verified.
+  sequence number, Adler-32 of the header, block size `32`. Verified.
+- The sequence number is the backup point number (the `s` of the file name), the same in every file of
+  that point, retries included. Verified on a real 6-point chain (November 2026). It doesn't order files.
 - The 12 id bytes: acronis-tib-reader reads them as a `uint64` archive id (offset 8) and a `uint32`
-  volume id (offset 16), both ids from True Image's catalog database and identical in every file of a
-  split backup. This reader treats them as three 4-byte keys and only requires the first 4 bytes to match
-  across files. Not checked here: needs a real split backup.
+  volume id (offset 16). On the real chain, bytes 8-15 are the same in every file and bytes 16-19 differ
+  per file. This reader only requires the first 4 bytes to match across files.
 - Version 1 with a 32-byte header and `0x1000` at offset `0x1C` is a True Image 2010-2013 file (not the
   Mac format, which has a 36-byte header). Recognized and refused with a clear message.
 - Footer: last 32 bytes are the header byte-reversed. 8 bytes before that is the slice size (bytes of
   slice data counted from after the header, summed over every volume of the slice). Verified.
 - The file length is a multiple of the block size (32). Verified.
+
+
+File names, retries and missing points
+--------------------------------------
+`NAME_full_b1_s1_v1.tib`, then `NAME_inc_b1_s2_v1.tib`, ... (`s` = backup point, `v` = volume).
+Seen on a real chain (True Image 25.7, November 2026):
+- `NAME_inc_b1_s2_v1-2.tib`, `..._v1-3.tib`: **retries**, not parts. When a backup point is interrupted,
+  True Image leaves the unfinished file and the next attempt writes `-2`, then `-3`. Unfinished files
+  have no footer and start with the same bytes as each other; the finished retry's footer slice size and
+  metadata offsets cover only itself. The reader uses the newest attempt with a footer and warns about the
+  rest. A point with no finished attempt is skipped with a warning.
+- How a *split* retry would be named (`_v2-3`?) is not known; volumes of one attempt are matched by the
+  `-N` suffix.
+- A backup point's files can be missing (here `s3`, about 63 GiB) while later points remain. Later points
+  are still readable: the missing range becomes a hole, and only files whose data is stored in it fail
+  (with a `missing-part` error).
+
+
+Slice start offset
+------------------
+All offsets in a slice count from the start of the whole archive (slice data of every earlier point
+summed). Normally a slice starts where the previous one ends. When an earlier point is missing, the start
+is found from the trailer's metadata offset minus the position of the slice's first Config record.
+The Config record also stores it (verified on 3 slices of the real chain): `uint64` at 60 = the slice's
+start, `uint32` at 56 = number of earlier backup points, `uint64` at 141 = metadata offset within the slice
+(0 when the metadata is the first thing in the slice, which happens for small incrementals).
 
 
 Slice trailer
@@ -82,7 +109,7 @@ Attribute keys seen: `metainfo` (product, task id, computer id, compression, enc
 RecordIndex (type 108)
 ----------------------
 ```
-0   2   01 02
+0   2   01 02, or 01 04 (True Image 25.7: same handles, nothing after them). Verified
 2   2   uint16 kind: 0x1000 normally (bytes "01 02 00 10 01 00 00 00"); 0x0007 see below
 4   4   uint32 1
 8   8   total file size
@@ -151,7 +178,8 @@ entries:
   uint64  size in bytes
   uint64  size again; acronis-tib-reader calls it the allocated size (rounded up to clusters)
   uint64  offset of the entry's FileMetaStart record (from the start of the archive)
-  uint32  kind: 0x83 drive root, 0x80 folder, 0 file. Verified on all 9,212 entries
+  uint32  kind: 0x83 drive root, 0x80 folder, 0 file. Verified on all 9,212 entries. A later
+          real backup also has 0x82 for drive roots (E:, G:); the difference from 0x83 is unknown
   uint64  offset of the FileMetaStart record again
   uint32  1
   uint32  unknown, same for every entry (volume id?)

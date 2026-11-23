@@ -34,12 +34,23 @@ export interface FixtureOptions {
 	corruptHashOf?: string;
 	/** Store no data for this file, using the 0x0007 record index kind seen in a real backup */
 	noDataFor?: string;
+	/** Write record indexes in the "01 04" form seen in a real True Image 25.7 backup (no security descriptor) */
+	shortIndex?: boolean;
+	/** Backup point number ("s" in the file name; default 1). Points after 1 are named "_inc_" */
+	sliceNumber?: number;
+	/** Where this backup point starts in the whole archive: the total size of the points before it */
+	sliceStart?: number;
+	/** Retry number: 2 names the files "_v1-2.tib", like True Image's retry after an interrupted attempt */
+	attempt?: number;
+	/** Leave out the footer, like the file of an interrupted attempt */
+	unfinished?: boolean;
 }
 
 const MAGIC = 0xA2B924CE;
 const FS_TRAILER = Buffer.from('2C8AE194', 'hex');
 const SBS_TRAILER = Buffer.from('2B8AE194', 'hex');
 const INDEX_MAGIC = Buffer.from('0102001001000000', 'hex');
+const SHORT_INDEX_MAGIC = Buffer.from('0104001001000000', 'hex');
 const NO_DATA_INDEX_MAGIC = Buffer.from('0102070001000000', 'hex');
 
 const u32 = (v: number) => { let b = Buffer.alloc(4); b.writeUInt32LE(v, 0); return b; };
@@ -167,12 +178,21 @@ function listingRecord(entries: Array<FixtureEntry & { metaOffset: number }>) {
  * Writes a synthetic backup into 'dir'. Returns the path of its first .tib file.
  */
 export function writeWindowsBackup(dir: string, entries: FixtureEntry[], opts: FixtureOptions = {}): string {
+	return writeWindowsSlice(dir, entries, opts).firstFile;
+}
+
+/**
+ * Writes one backup point. Also returns its size, which is where the next point starts ('sliceStart').
+ */
+export function writeWindowsSlice(dir: string, entries: FixtureEntry[], opts: FixtureOptions = {}): { firstFile: string; sliceSize: number } {
 	let name = opts.name || 'Test';
 	let blockSize = opts.blockSize || 256 * 1024;
 	let creationTime = opts.creationTime || new Date('2024-06-22T00:30:07.756Z');
+	let sliceNumber = opts.sliceNumber || 1;
 
+	// Offsets stored in a backup point count from the start of the whole archive
 	let chunks: Buffer[] = [];
-	let pos = 0;
+	let pos = opts.sliceStart || 0;
 	let push = (b: Buffer) => { let at = pos; chunks.push(b); pos += b.length; return at; };
 
 	// File data first, like True Image
@@ -206,9 +226,9 @@ export function writeWindowsBackup(dir: string, entries: FixtureEntry[], opts: F
 		}
 		push(zrec(110, Buffer.alloc(0)));
 
-		indexes.set(e.path, Buffer.concat([
-			INDEX_MAGIC, u64(e.data.length), u32(handles.length / 3), ...handles, Buffer.alloc(84)
-		]));
+		indexes.set(e.path, Buffer.concat(opts.shortIndex
+			? [ SHORT_INDEX_MAGIC, u64(e.data.length), u32(handles.length / 3), ...handles ]
+			: [ INDEX_MAGIC, u64(e.data.length), u32(handles.length / 3), ...handles, Buffer.alloc(84) ]));
 	}
 
 	// Metadata records of every entry
@@ -250,22 +270,25 @@ export function writeWindowsBackup(dir: string, entries: FixtureEntry[], opts: F
 
 	let files: string[] = [];
 	parts.forEach((part, i) => {
-		let h = header(i + 1, archiveKey, sliceKey, Buffer.from([ 0xc0, 0xc1, 0xc2, i ]));
+		// Every file of a backup point carries the point's number as its sequence (seen in a real backup)
+		let h = header(sliceNumber, archiveKey, sliceKey, Buffer.from([ 0xc0, 0xc1, 0xc2, i ]));
 		let body: Buffer[] = [ h, part ];
 
-		if(i === parts.length - 1) {
+		if(i === parts.length - 1 && !opts.unfinished) {
 			let pad = (32 - ((part.length + 48) % 32)) % 32;
 			let footer = Buffer.alloc(16);
 			footer.writeBigUInt64LE(BigInt(sliceData.length), 8);
 			body.push(Buffer.alloc(pad), footer, Buffer.from(h).reverse());
 		}
 
-		let file = path.join(dir, name + '_full_b1_s1_v' + (i + 1) + '.tib');
+		let type = sliceNumber === 1 ? 'full' : 'inc';
+		let retry = opts.attempt && opts.attempt > 1 ? '-' + opts.attempt : '';
+		let file = path.join(dir, name + '_' + type + '_b1_s' + sliceNumber + '_v' + (i + 1) + retry + '.tib');
 		fs.writeFileSync(file, Buffer.concat(body));
 		files.push(file);
 	});
 
-	return files[0];
+	return { firstFile: files[0], sliceSize: sliceData.length };
 }
 
 

@@ -77,8 +77,13 @@ Next steps (in priority order)
 - [~] Attributes and creation time: available through `WindowsFS.entryMeta()`, not yet shown by mounts
 - [x] Slice id and creation time (from the config record)
 - [~] Sector-by-sector disk backups: clear "not supported" error only (no sample to reverse-engineer)
-- [~] Backups split across several `.tib` files: loop fixed, untested (no sample)
-- [~] Incremental chains: code path exists, untested (no sample)
+- [~] Backups split across several `.tib` files: loop fixed, untested (no sample of a real split)
+- [x] Incremental chains: checked on a real 6-point chain (True Image 25.7)
+- [x] Retried backup points (`_v1-2.tib`, `_v1-3.tib`): newest finished attempt used, unfinished ones ignored
+- [x] Missing backup point in the middle of a chain: later points open, files stored in it fail clearly
+- [x] Record index form `01 04`, drive-root kind `0x82`
+- [ ] Show the backup point's own number (`s4`) in `info` instead of its position when points are missing
+- [ ] Backup point creation time: every point of the real chain shows the first point's time and id
 
 
 5. Mac format

@@ -30,6 +30,7 @@ export enum EntryKind {
 	File = 0,
 	Folder = 0x80,
 	Root = 0x83, /**< Root of a backed up drive, e.g. "G:" */
+	OtherRoot = 0x82, /**< Also a drive root (seen for E: and G: in a real backup); how it differs from 0x83 is unknown */
 }
 
 /**
@@ -321,7 +322,7 @@ function parseListing(data: Buffer): ListingEntry[] {
 			throw new FormatError('Listing entry for ' + path + ' is shorter than expected');
 		}
 
-		if(kind !== EntryKind.File && kind !== EntryKind.Folder && kind !== EntryKind.Root) {
+		if(kind !== EntryKind.File && kind !== EntryKind.Folder && kind !== EntryKind.Root && kind !== EntryKind.OtherRoot) {
 			warn('Unknown listing entry kind 0x' + kind.toString(16) + ' for ' + path);
 		}
 
@@ -347,7 +348,9 @@ function parseListing(data: Buffer): ListingEntry[] {
 
 
 function parseIndex(data: Buffer): { kind: number; totalSize: number; handles: RecordHandle[] } {
-	if(data.length < 20 || data[0] !== 0x01 || data[1] !== 0x02 || data.readUInt32LE(4) !== 1) {
+	// "01 02" is followed by a security descriptor after the handles; "01 04" (seen in a True Image 25.7
+	// backup) ends after the handles. The handles are the same in both.
+	if(data.length < 20 || data[0] !== 0x01 || (data[1] !== 0x02 && data[1] !== 0x04) || data.readUInt32LE(4) !== 1) {
 		throw new FormatError('Bad record index magic: ' + data.subarray(0, 8).toString('hex'));
 	}
 

@@ -4,9 +4,9 @@ import { SnapshotFS } from '../fs/types';
 import { openSectorDisk, SectorDisk } from '../sector/open';
 import { DiskFS } from '../disk/fs';
 import { fileKey } from '../cachedir';
-import { ListingRecord, ReadRecord, RecordType } from './record';
+import { ListingRecord, PeekRecordType, ReadRecord, RecordType } from './record';
 import { Windows2015Volume } from './volume';
-import { ConcatenatedReader, Reader } from '../reader';
+import { ConcatenatedReader, MissingDataReader, Reader } from '../reader';
 import { ParseConfigRecord } from './config';
 import { FormatError, NotSupportedError } from '../errors';
 import { warn } from '../log';
@@ -34,10 +34,15 @@ export interface SliceTrailer {
 const FILE_SYSTEM_MAGIC = Buffer.from('2C8AE194', 'hex');
 const SECTOR_BY_SECTOR_MAGIC = Buffer.from('2B8AE194', 'hex');
 
+function formatGiB(bytes: number) {
+	return (bytes / 2 ** 30).toFixed(1) + ' GiB';
+}
+
 
 export default class WindowsSlice extends Slice {
 
-	static async Open(volumes: Windows2015Volume[], parent: WindowsSlice|null): Promise<WindowsSlice> {
+	/** 'sliceNumber' (the "s" number of the file names) is only used in messages */
+	static async Open(volumes: Windows2015Volume[], parent: WindowsSlice|null, sliceNumber = 1): Promise<WindowsSlice> {
 
 		// TODO: We can also detect which files are the end of a slice without the filenames by looking for which one has a valid footer (which combined with having valid footer offsets could be a robust check)
 
@@ -82,14 +87,41 @@ export default class WindowsSlice extends Slice {
 
 			s = new WindowsSlice(volumes, parent, reader);
 
-			s.absoluteReader = await (
-				parent ? parent.absoluteReader.append(reader) : ConcatenatedReader.Create([ reader.slice() ])
-			);
-
 			s.trailer = await this.ReadTrailer(reader);
 
 			if(!s.trailer.isValid) {
 				throw new FormatError('Could not validate slice trailer');
+			}
+
+			// Offsets in a slice count from the start of the whole archive. It normally starts where the
+			// previous slice ends, unless a backup point's files are missing from the folder.
+			let expectedStart = parent ? await parent.absoluteReader.length() : 0;
+			let start = s.trailer.form === SliceForm.FileSystem
+				? await this.FindStart(reader, s.trailer.metaDataOffset, expectedStart)
+				: expectedStart;
+
+			if(start < expectedStart) {
+				throw new FormatError('Backup point ' + sliceNumber + ' overlaps the one before it (' + lastVolume.fileName + ')');
+			}
+
+			if(start === expectedStart) {
+				s.absoluteReader = await (
+					parent ? parent.absoluteReader.append(reader) : ConcatenatedReader.Create([ reader.slice() ])
+				);
+			}
+			else {
+				let gap = start - expectedStart;
+				warn('Backup point ' + sliceNumber + ' builds on ' + formatGiB(gap) + ' of earlier backup points whose files are missing from the folder. ' +
+					'Files whose data is stored there can\'t be read.');
+
+				let missing = new MissingDataReader(gap, 'This data is stored in an earlier backup point whose files are missing from the folder');
+				let upToGap = await (parent ? parent.absoluteReader.append(missing) : ConcatenatedReader.Create([ missing ]));
+				try {
+					s.absoluteReader = await upToGap.append(reader);
+				}
+				finally {
+					await upToGap.close();
+				}
 			}
 
 			s._fileTime = (await fs.promises.stat(lastVolume.fileName)).mtime;
@@ -113,6 +145,39 @@ export default class WindowsSlice extends Slice {
 			}
 
 			throw e;
+		}
+	}
+
+	/**
+	 * Finds the absolute offset at which a file-level slice starts. The trailer's metadata offset points
+	 * at a Config record; if that isn't where 'expectedStart' puts it, earlier data is missing, and the
+	 * start is found by walking the slice's records up to its first Config record.
+	 */
+	private static async FindStart(reader: Reader, metaDataOffset: number, expectedStart: number): Promise<number> {
+		let r = reader.slice();
+		try {
+			let size = await r.length();
+
+			let local = metaDataOffset - expectedStart;
+			if(local >= 0 && local < size) {
+				r.seek(local);
+				if(await PeekRecordType(r) === RecordType.Config) {
+					return expectedStart;
+				}
+			}
+
+			r.seek(0);
+			while(r.pos() < size) {
+				if(await PeekRecordType(r) === RecordType.Config) {
+					return metaDataOffset - r.pos();
+				}
+				await ReadRecord(r);
+			}
+
+			throw new FormatError('Could not find the metadata of a backup point');
+		}
+		finally {
+			await r.close();
 		}
 	}
 
