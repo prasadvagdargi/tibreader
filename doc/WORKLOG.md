@@ -587,3 +587,21 @@ pm run icon` now renders 512x512. Rendering 1024 here gave a stretched, cut-off 
    `skills/tib-backups/SKILL.md`. `claude plugin validate` passes (its one warning: the repository's
    CLAUDE.md isn't plugin context, which is intended).
 6. Tested on generated backups only (`test/mcp.test.ts`, 16 tests); not yet with Claude on real files.
+
+
+2026-11-23: first real .tibx
+----------------------------
+1. A real 78.7 GiB `.tibx` disk backup (True Image 25.7, one backup point, HP laptop SSD) opened, but
+   every volume read as zeros almost everywhere and no NTFS folders were shown.
+2. The trees were fine: 533,194 extents covering 100 GiB of volume 10. But `segment_map`'s third field,
+   read as the backup point that stored each segment, held 1, `0x40000001`, `0x80000002`... while the
+   only backup point has id 2, so nearly every extent was dropped. Its low 30 bits equal the number of
+   extents using the segment on all 501,647 segments (a dedup reference count); the top 2 bits are flags.
+3. The reader now uses the field as a backup point id only when every segment names a known point;
+   otherwise all extents belong to the point (several points: a warning that they all show the newest
+   state).
+4. Result: Windows (164 GiB), Recovery, Windows RE tools and HP RECOVERY partitions show as NTFS folders;
+   `Windows/System32/notepad.exe` reads back with its `MZ` header. The EFI partition is FAT32 (raw image
+   only).
+5. Fixture option `referenceCounts` (point ids from 2, field = extents per segment); its test fails on
+   the old reader.

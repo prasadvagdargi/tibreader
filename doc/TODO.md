@@ -162,6 +162,11 @@ Details, sizes and order in `Plan-tib-reader.md`. Work on the `more-formats` bra
         (full/incremental chains), split archives (global page space), streams as `DiskFS` images
   - [x] Encrypted archives refused at open; page checksums checked on every read
   - [~] Assumptions without a real sample: incremental overlap rules, shared segments, whole-disk layout
+  - [x] Checked on a real single-point True Image 25.7 disk backup: segment_map's third field is a
+        reference count there, not a backup point id (it hid almost all data); NTFS partitions now readable
+  - [ ] Which backup point stored which segment, for multi-point archives with the 25.7 layout (needs a
+        real incremental `.tibx`)
+  - [ ] Hide True Image metadata streams over 1 MiB (streams 11 and 12 of the real backup)
   - [ ] Single-bit repair with the page CRC (True Image does it; we only report)
 - [x] Phase 4 (experimental, at the maintainer's request): `.tibx` password decryption (`src/tibx/encryption.ts`)
   - [x] Key records in header slot 7, PBKDF2-HMAC-SHA256 + AES-256-CBC key unwrap, AES-CBC/GCM segments

@@ -1,10 +1,11 @@
 .tibx format notes (True Image 2020 and later)
 ==============================================
 
-What `src/tibx/` implements. **Not checked against a real file here**: it comes from acronis-tib-reader
-(`tibread/tibx/*.py`, `docs/legacy/ARCHIVE3_*.md`), whose author read a 54 GB True Image 2025 `.tibx`
-with it. Tests use synthetic archives from `test/helpers/tibx-fixture.ts`. Unless said otherwise,
-integers are **big-endian**.
+What `src/tibx/` implements. It comes from acronis-tib-reader (`tibread/tibx/*.py`,
+`docs/legacy/ARCHIVE3_*.md`), whose author read a 54 GB True Image 2025 `.tibx` with it. **Checked here
+against one real file** (November 2026): a single-file, single-point, unencrypted 78.7 GiB disk backup
+made by True Image 25.7 (header version 8); "Verified" below means checked on it. Tests use synthetic
+archives from `test/helpers/tibx-fixture.ts`. Unless said otherwise, integers are **big-endian**.
 
 
 Files
@@ -73,12 +74,22 @@ first occurrence of a key wins and deletions hide older entries.
 Trees used
 ----------
 - `segment_map`: `uint64` segment id -> `uint32` page count (**little-endian**), `uint32` first page,
-  `uint32` backup point id, SHA-1 (not checked).
+  `uint32` owner field, SHA-1 (not checked). Page count and first page verified.
+  - Owner field: acronis-tib-reader reads it as the backup point id. **In the real 25.7 archive it isn't:**
+    the low 30 bits are the number of `data_map` extents that use the segment (matched on all 501,647
+    segments; 1 for most, up to hundreds for deduplicated ones), and the top 2 bits are flags (values
+    0-3 all seen; meaning unknown). The only backup point there has id 2.
+  - The reader uses the field as a backup point id only if every segment names a known point. Otherwise
+    every extent belongs to every point: right for a single point; with several points it warns that
+    they all show the newest state, since which point stored which data isn't known for this layout.
 - `data_map`: key `{uint64 stream id, uint64 offset, uint24 length, uint32 kind (2), uint64 extent id}`,
   value `{uint64 segment id, uint16 index in segment}` (`0xFFFF`: the extent is the whole segment).
+  Verified (533,194 extents, all kind 2; 25 with an index other than `0xFFFF`).
 - `slices`: `uint32` backup point id -> 132 bytes: `0x00` UUID, `0x10` start time (ms since 1970),
   `0x18` end time, `0x20` parent UUID (zeros for a full backup), `0x44` flags (`0x04` differential,
-  `0x08` edited, `0x73` incremental bits, otherwise full).
+  `0x08` edited, `0x73` incremental bits, otherwise full). UUID and times verified. In the real (full)
+  backup, `0x20` is not zeros but two `uint64`s that look like sizes (115.4 GiB, 82.4 GiB), so the parent
+  UUID offset is doubtful for this version.
 
 
 Segments
@@ -93,6 +104,11 @@ How backup points are shown
 Each stream id of `data_map` is an image (`Volume N.img`, or `Volume.img` if there is one), shown through
 `DiskFS` like sector-by-sector backups (volume folders for NTFS, partitions for disks). Streams under
 1 MiB that don't start with a boot sector or partition table are True Image's own metadata and hidden.
+
+On the real backup: streams 6 (FAT32 EFI partition), 10 (NTFS "Windows"), 14 (NTFS, Recovery),
+18 (NTFS "Windows RE tools") and 22 (NTFS "RECOVERY") are partitions; 11 and 12 (5 and 13 MB, no boot
+sector) look like True Image metadata but are shown because they are over 1 MiB; about 20 other tiny
+streams are hidden.
 
 Assumptions (no real sample to check):
 - **Incremental and differential backup points:** a point sees the extents whose segment belongs to it

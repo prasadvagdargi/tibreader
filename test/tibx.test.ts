@@ -109,6 +109,23 @@ describe('.tibx archives (synthetic)', () => {
 		});
 	});
 
+	test('segment map holding reference counts instead of backup point ids (True Image 25.7)', async () => {
+		let other = sampleImage(1536 * 1024, 22);
+		await withTibx([ { volumes: { 6: ntfs, 10: other } } ], { referenceCounts: true, shareFirstSegment: true }, async (file) => {
+			let a = await openArchive(file);
+			try {
+				let d = await a.getSlice().openFileSystem() as DiskFS;
+				assert.equal((await d.read('/Volume 6 (Windows)/Users/Ann/notes.txt', 0, 100)).toString(), 'notes from a tibx');
+				assert.ok((await d.read('/Volume 6.img', 0, ntfs.length)).equals(ntfs));
+				let ten = await d.read('/Volume 10.img', 0, other.length);
+				assert.ok(ten.length > 0 && ten.equals(other.subarray(0, ten.length)));
+			}
+			finally {
+				await a.close();
+			}
+		});
+	});
+
 	test('incremental backup points each show their own state', async () => {
 		let v1 = sampleImage(2 * 1024 * 1024, 31);
 		let v2 = Buffer.from(v1);
