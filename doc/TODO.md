@@ -154,7 +154,8 @@ Details, sizes and order in `Plan-tib-reader.md`. Work on the `more-formats` bra
   - [x] Volume folders in `DiskFS` ("Partition 2 (Windows)"); extraction and mounts work through it
   - [x] Test NTFS image generator (`test/helpers/ntfs-fixture.ts`) and test compressors
   - [~] Not checked against an NTFS image made by Windows (none on this machine; making one needs admin)
-  - [ ] FAT32/exFAT volumes (only raw `.img` for now)
+  - [x] FAT32 volumes as folders (`src/fat/fs.ts`, `Format-FAT32.md`); checked on a real EFI partition
+  - [ ] FAT12/FAT16 and exFAT volumes (only raw `.img` for now)
 - [x] Phase 3: `.tibx` (`src/tibx/`, notes in `Format-Tibx.md`)
   - [x] Pages with CRC-32C, newest archive header, tree superblocks, LDIR/LEAF pages (raw and chained
         LZ4), compact and variable cells, mem-trees, newest-wins merge with deletions

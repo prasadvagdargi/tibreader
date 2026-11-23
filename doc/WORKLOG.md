@@ -605,3 +605,17 @@ pm run icon` now renders 512x512. Rendering 1024 here gave a stretched, cut-off 
    only).
 5. Fixture option `referenceCounts` (point ids from 2, field = extents per segment); its test fails on
    the old reader.
+
+
+2026-11-23: FAT32 volumes
+-------------------------
+1. Asked for: show the SSD backup's EFI partition (FAT32) as files too, on the `.tibx` fix branch.
+2. `src/fat/fs.ts`: boot sector (FAT32 told apart by its BPB, since Windows formats small EFI partitions
+   as FAT32 below the specification's cluster minimum), FAT read in cached 64 KiB blocks, cluster chains
+   as runs, folders read lazily, long names with checksum check, Windows lowercase flags for 8.3 names,
+   DOS times (local time), label from the root folder or the boot sector. Registered like NTFS, so disk
+   images, sector-by-sector `.tib` and `.tibx` all show FAT32 volumes as folders.
+3. Real EFI partition: 165 files, 53 folders, all read in full; the 117 PE files start with `MZ`;
+   `bootmgfw.efi` and `memtest.efi` match the NTFS volume's copies byte for byte.
+4. `test/helpers/fat-fixture.ts` builds FAT32 images (long and short names, fragmented file, a folder
+   over several clusters, deleted entry, label, broken chain); `test/fat.test.ts`.
