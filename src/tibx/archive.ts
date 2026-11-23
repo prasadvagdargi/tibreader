@@ -19,7 +19,12 @@ import { OpenOptions } from '../archive';
 /** Where a segment is: from the segment_map tree */
 interface SegmentLocation {
 	firstPage: number;
-	sliceId: number;
+	/**
+	 * Third field of the segment_map value. acronis-tib-reader read it as the id of the backup point that
+	 * stored the segment. In a real True Image 25.7 archive it is instead 2 flag bits and, in the low 30
+	 * bits, the number of extents using the segment (checked on all 501,647 segments).
+	 */
+	ownerField: number;
 }
 
 /** One stored piece of a volume: from the data_map tree */
@@ -423,10 +428,10 @@ export class TibxArchive extends Archive {
 			throw new NotSupportedError('Unexpected .tibx tree layout (data map ' + dataMap.keyLength + '/' + dataMap.valueLength + ', segment map ' + segmentMap.keyLength + '/' + segmentMap.valueLength + ')');
 		}
 
-		// segment_map: uint64 id -> uint32 page count (little-endian!), uint32 first page, uint32 backup point id, SHA-1
+		// segment_map: uint64 id -> uint32 page count (little-endian!), uint32 first page, uint32 owner field, SHA-1
 		for(let e of await readTree(this._store, segmentMap)) {
 			let id = Number(e.key.readBigUInt64BE(0));
-			this._segments.set(id, { firstPage: e.value!.readUInt32BE(4), sliceId: e.value!.readUInt32BE(8) });
+			this._segments.set(id, { firstPage: e.value!.readUInt32BE(4), ownerField: e.value!.readUInt32BE(8) });
 		}
 
 		// data_map: (volume, offset, uint24 length, kind, extent id) -> (segment id, index in segment)
@@ -509,6 +514,13 @@ export class TibxArchive extends Archive {
 		let points: Array<BackupPointRecord | null> = records.length ? records : [ null ];
 		let slices: TibxSlice[] = [];
 
+		// Only trust the segment_map's owner field as a backup point id if every segment names a known point
+		let pointIds = new Set(records.map((r) => r.sliceId));
+		let segmentsNamePoints = records.length > 0 && Array.from(this._segments.values()).every((s) => pointIds.has(s.ownerField));
+		if(!segmentsNamePoints && records.length > 1) {
+			warn('This .tibx backup doesn\'t record which backup point stored which data; every backup point shows the newest state');
+		}
+
 		for(let record of points) {
 			// The backup points this one is built from, oldest first
 			let chain: BackupPointRecord[] = [];
@@ -526,7 +538,9 @@ export class TibxArchive extends Archive {
 			let volumes = new Map<number, Extent[][]>();
 			for(let e of extents) {
 				let segment = this._segments.get(e.segmentId);
-				let level = record ? (segment ? levelOf.get(segment.sliceId) : undefined) : 0;
+				let level = record && segmentsNamePoints
+					? (segment ? levelOf.get(segment.ownerField) : undefined)
+					: chain.length ? chain.length - 1 : 0;
 				if(level === undefined) {
 					continue;
 				}

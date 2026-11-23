@@ -42,6 +42,11 @@ export interface TibxFixtureOptions {
 	shareFirstSegment?: boolean;
 	/** Add metadata streams that should stay hidden (small, no boot sector) */
 	metadataStream?: boolean;
+	/**
+	 * Lay out the segment_map like a real True Image 25.7 archive: its third field is the number of extents
+	 * using the segment (not a backup point id), and the backup point ids start at 2
+	 */
+	referenceCounts?: boolean;
 }
 
 function u32be(v: number) { let b = Buffer.alloc(4); b.writeUInt32BE(v >>> 0, 0); return b; }
@@ -298,7 +303,7 @@ export function writeTibx(dir: string, points: TibxPointSpec[], opts: TibxFixtur
 		return Buffer.concat([ iv, c.update(plain), c.final() ]);
 	};
 
-	let writeSegment = (data: Buffer, sliceId: number): number => {
+	let writeSegment = (data: Buffer, sliceId: number, extentsUsingIt = 1): number => {
 		let id = nextSegment++;
 		let compressed = zlib.zstdCompressSync(data);
 		let isCompressed = compressed.length < data.length;
@@ -325,7 +330,7 @@ export function writeTibx(dir: string, points: TibxPointSpec[], opts: TibxFixtur
 		let value = Buffer.alloc(32);
 		value.writeUInt32LE(w.pages.length - firstPage, 0);
 		value.writeUInt32BE(firstPage, 4);
-		value.writeUInt32BE(sliceId, 8);
+		value.writeUInt32BE(opts.referenceCounts ? extentsUsingIt : sliceId, 8);
 		segmentMap.entries.push({ key: u64be(id), value });
 		return id;
 	};
@@ -344,7 +349,7 @@ export function writeTibx(dir: string, points: TibxPointSpec[], opts: TibxFixtur
 	};
 
 	points.forEach((point, pi) => {
-		let sliceId = pi + 1;
+		let sliceId = pi + (opts.referenceCounts ? 2 : 1);
 		let previous = pi > 0 ? points[pi - 1] : null;
 		let volumes = { ...point.volumes };
 		if(opts.metadataStream && pi === 0) {
@@ -365,7 +370,7 @@ export function writeTibx(dir: string, points: TibxPointSpec[], opts: TibxFixtur
 				}
 				if(shared && off === 0 && data.length >= 2 * extentSize) {
 					let second = data.subarray(extentSize, 2 * extentSize);
-					let segment = writeSegment(Buffer.concat([ chunk, second ]), sliceId);
+					let segment = writeSegment(Buffer.concat([ chunk, second ]), sliceId, 2);
 					addExtent(volumeId, 0, chunk.length, segment, 0);
 					addExtent(volumeId, extentSize, second.length, segment, 1);
 					off += extentSize;

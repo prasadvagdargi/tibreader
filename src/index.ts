@@ -11,6 +11,7 @@ import './win/index';
 import './tibx/archive';
 // File systems inside disk images
 import './ntfs/fs';
+import './fat/fs';
 
 export { Archive };
 export type { ArchiveFormat, ArchiveFile, OpenOptions } from './archive';
@@ -29,6 +30,7 @@ export type { DiskVolumeInfo } from './disk/fs';
 export type { DiskImage } from './disk/image';
 export type { Partition, PartitionTable } from './disk/partitions';
 export { NtfsFS } from './ntfs/fs';
+export { FatFS } from './fat/fs';
 export { FormatError, NotSupportedError } from './errors';
 export type { ErrorCode } from './errors';
 export { setWarningHandler } from './log';

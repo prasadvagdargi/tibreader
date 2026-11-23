@@ -154,7 +154,8 @@ Details, sizes and order in `Plan-tib-reader.md`. Work on the `more-formats` bra
   - [x] Volume folders in `DiskFS` ("Partition 2 (Windows)"); extraction and mounts work through it
   - [x] Test NTFS image generator (`test/helpers/ntfs-fixture.ts`) and test compressors
   - [~] Not checked against an NTFS image made by Windows (none on this machine; making one needs admin)
-  - [ ] FAT32/exFAT volumes (only raw `.img` for now)
+  - [x] FAT32 volumes as folders (`src/fat/fs.ts`, `Format-FAT32.md`); checked on a real EFI partition
+  - [ ] FAT12/FAT16 and exFAT volumes (only raw `.img` for now)
 - [x] Phase 3: `.tibx` (`src/tibx/`, notes in `Format-Tibx.md`)
   - [x] Pages with CRC-32C, newest archive header, tree superblocks, LDIR/LEAF pages (raw and chained
         LZ4), compact and variable cells, mem-trees, newest-wins merge with deletions
@@ -162,6 +163,11 @@ Details, sizes and order in `Plan-tib-reader.md`. Work on the `more-formats` bra
         (full/incremental chains), split archives (global page space), streams as `DiskFS` images
   - [x] Encrypted archives refused at open; page checksums checked on every read
   - [~] Assumptions without a real sample: incremental overlap rules, shared segments, whole-disk layout
+  - [x] Checked on a real single-point True Image 25.7 disk backup: segment_map's third field is a
+        reference count there, not a backup point id (it hid almost all data); NTFS partitions now readable
+  - [ ] Which backup point stored which segment, for multi-point archives with the 25.7 layout (needs a
+        real incremental `.tibx`)
+  - [ ] Hide True Image metadata streams over 1 MiB (streams 11 and 12 of the real backup)
   - [ ] Single-bit repair with the page CRC (True Image does it; we only report)
 - [x] Phase 4 (experimental, at the maintainer's request): `.tibx` password decryption (`src/tibx/encryption.ts`)
   - [x] Key records in header slot 7, PBKDF2-HMAC-SHA256 + AES-256-CBC key unwrap, AES-CBC/GCM segments
